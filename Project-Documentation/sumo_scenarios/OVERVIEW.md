@@ -89,4 +89,4 @@ traffic personality.
 
 ## Last updated
 
-2026-04-26 · pending commit (highway_3lane scenario authored, smoke test passes)
+2026-04-26 · `494e850` (highway_3lane scenario authored, smoke test passes)

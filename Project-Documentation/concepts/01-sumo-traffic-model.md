@@ -164,4 +164,4 @@ A few concrete consequences for downstream design:
 
 ## Last updated
 
-2026-04-26 · pending commit (concept note authored alongside Task #3)
+2026-04-26 · `494e850` (concept note authored alongside Task #3)
