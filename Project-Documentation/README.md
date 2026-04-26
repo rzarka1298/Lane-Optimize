@@ -9,7 +9,8 @@ live in [`../CLAUDE.md`](../CLAUDE.md).
 
 ```
 Project-Documentation/
-├── README.md                     ← you are here
+├── README.md                     ← you are here (the index)
+├── setup.md                      ← cross-cutting: dev environment, SUMO install, MPS notes
 ├── concepts/                     ← cross-cutting learning notes (DQN math, PPO, etc.)
 │   └── README.md                 ← concept notes index (created when first note lands)
 ├── laneiq/                       ← mirrors laneiq/ Python package
@@ -26,6 +27,14 @@ Project-Documentation/
 ├── backend/OVERVIEW.md           ← mirrors backend/
 └── frontend/OVERVIEW.md          ← mirrors frontend/
 ```
+
+Two doc shapes live here:
+
+- **Mirrored OVERVIEW.md** — one per code folder, kept in 1:1 sync with the
+  code structure. Read before editing the matching folder.
+- **Top-level cross-cutting docs** (e.g., `setup.md`) — for concerns that
+  don't belong to any single code folder: dev environment, training
+  reproducibility, deployment, etc. Read when their topic is in scope.
 
 OVERVIEW.md files **only exist for folders whose code is non-trivial**. Empty
 scaffolding folders don't get an OVERVIEW.md until they hold real code — empty
@@ -57,10 +66,16 @@ this doc + the code; they should understand what's there and what not to break.
 
 ## Index of current docs
 
-| Path | Status |
-| --- | --- |
-| `laneiq/OVERVIEW.md` | ✅ Scaffold-only state recorded |
-| `concepts/` | empty (first concept note lands when DQN starts in Week 2) |
-| `sumo_scenarios/OVERVIEW.md` | ⏳ created during Task #3 (next) |
-| `backend/OVERVIEW.md` | ⏳ Week 5 |
-| `frontend/OVERVIEW.md` | ⏳ Week 6 |
+| Path | Status | Last updated |
+| --- | --- | --- |
+| [`setup.md`](setup.md) | ✅ Dev env + SUMO install + libsumo decision | `2a5f8ff` |
+| [`laneiq/OVERVIEW.md`](laneiq/OVERVIEW.md) | ✅ Scaffold-only state recorded | `be30837` |
+| `concepts/` | ⏳ First concept note lands when DQN starts (Week 2) | — |
+| `sumo_scenarios/OVERVIEW.md` | ⏳ Created during Task #3 (next) | — |
+| `laneiq/env/OVERVIEW.md` | ⏳ Week 2 (LaneIQEnv lands) | — |
+| `laneiq/agents/dqn/OVERVIEW.md` | ⏳ Week 2-3 (DQN from scratch) | — |
+| `laneiq/agents/baselines/OVERVIEW.md` | ⏳ Week 2 | — |
+| `laneiq/eval/OVERVIEW.md` | ⏳ Week 3 (eval matrix) | — |
+| `laneiq/multi_agent/OVERVIEW.md` | ⏳ Week 5 | — |
+| `backend/OVERVIEW.md` | ⏳ Week 5 | — |
+| `frontend/OVERVIEW.md` | ⏳ Week 6 | — |
