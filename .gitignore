@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# uv / venv
+.venv/
+.python-version-uv
+uv.lock.bak
+
+# Training artifacts
+runs/
+checkpoints/*
+!checkpoints/.gitkeep
+!checkpoints/final/
+!checkpoints/final/.gitkeep
+
+# Local results scratch (committed `results/` is hand-curated)
+results/scratch/
+
+# Frontend
+node_modules/
+dist/
+.vite/
+*.local
+
+# Backend
+backend/.env
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Notebooks
+.ipynb_checkpoints/
+
+# SUMO runtime artifacts (the generated .net.xml IS committed for repro)
+sumo_scenarios/**/tripinfo*.xml
+sumo_scenarios/**/sumo.log
+sumo_scenarios/**/*.fcd.xml
