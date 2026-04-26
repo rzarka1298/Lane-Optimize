@@ -119,5 +119,5 @@ traffic personality.
 
 ## Last updated
 
-2026-04-26 · `494e850` (scenario authored, headless smoke test passes) +
-visual-debugging recipe appended pending commit
+2026-04-26 · `2499dd8` (visual-debugging recipe added);
+prior `494e850` (scenario authored, headless smoke test passes)

@@ -71,7 +71,7 @@ this doc + the code; they should understand what's there and what not to break.
 | [`setup.md`](setup.md) | ✅ Dev env + SUMO install + libsumo decision | `2a5f8ff` |
 | [`laneiq/OVERVIEW.md`](laneiq/OVERVIEW.md) | ✅ Scaffold-only state recorded | `be30837` |
 | [`concepts/01-sumo-traffic-model.md`](concepts/01-sumo-traffic-model.md) | ✅ Krauss + LC2013 explainer; vType design rationale | `494e850` |
-| [`sumo_scenarios/OVERVIEW.md`](sumo_scenarios/OVERVIEW.md) | ✅ 3-lane highway scenario (3 densities) | `494e850` |
+| [`sumo_scenarios/OVERVIEW.md`](sumo_scenarios/OVERVIEW.md) | ✅ 3-lane scenario + sumo-gui visual-debug recipe | `2499dd8` |
 | `laneiq/env/OVERVIEW.md` | ⏳ Week 2 (LaneIQEnv lands) | — |
 | `laneiq/agents/dqn/OVERVIEW.md` | ⏳ Week 2-3 (DQN from scratch) | — |
 | `laneiq/agents/baselines/OVERVIEW.md` | ⏳ Week 2 | — |
