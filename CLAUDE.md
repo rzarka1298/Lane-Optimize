@@ -32,6 +32,9 @@ the original PRD is at [`Lane-Optimize-PRD.pdf`](Lane-Optimize-PRD.pdf).
   reward shaping, PPO clipping + GAE, multi-agent parameter sharing, WS protocol
   design, libsumo vs TraCI trade-offs.
 - **Don't push to GitHub.** Local commits only until the user says otherwise.
+- **No `Co-Authored-By: Claude` (or any AI-attribution trailer) in commit messages or
+  PR bodies.** Author commits as if they were the user's own. Drop the default
+  Claude Code trailer template entirely.
 
 ---
 
