@@ -90,4 +90,4 @@ yet at this scale).
 
 ## Last updated
 
-2026-04-26 · pending commit (sumo_runtime.py landed; 7 tests green; lint clean)
+2026-04-26 · `1f423f2` (sumo_runtime.py landed; 7 tests green; lint clean)
