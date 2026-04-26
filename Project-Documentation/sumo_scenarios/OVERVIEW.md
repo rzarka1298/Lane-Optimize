@@ -74,6 +74,36 @@ the ego vehicle via `traci.vehicle.add(vehID="ego", typeID="ego", ...)`.
 - **Step length = 0.1s (10 Hz).** Shared with the live demo's WebSocket
   stream rate; if you change it, the WS tick rate in `backend/` must match.
 
+## Visual debugging in `sumo-gui`
+
+Standard recipe to eyeball the scenario:
+
+```bash
+cd /Users/rugvedzarkar/Lane-Optimize        # repo root
+make sumo-gui-medium                         # or sumo-gui-low / sumo-gui-high
+```
+
+The GUI opens with the simulation paused at t=0. Then:
+
+1. **Set the delay slider.** Top toolbar — find the "Delay (ms)" field. Default
+   is `0` which runs as fast as the GUI can render (~30s of sim per real
+   second). Set to `100` ms to roughly real-time, or `50` ms to watch at 2×.
+2. **Start.** Press the green ▶ "Run" button (top-left). Press ⏸ to pause.
+3. **Zoom / pan.** Mouse wheel zooms; right-click + drag pans. There's a
+   "Locate" button in the toolbar to recenter.
+4. **What to look for.**
+   - Aggressive (red) vehicles overtake on either side, rarely yield.
+   - Slow (blue) vehicles stick to lane 0 (rightmost).
+   - At high density, ~40 vehicles on screen with natural stop-and-go waves.
+   - **The bottom-right warning panel should stay quiet.** Any "collision"
+     or "teleport" warnings during normal flow indicate a tuning issue.
+5. **Inspect a vehicle.** Right-click any vehicle → "Show Parameter" opens a
+   live panel of its state (speed, lane, accel, leader gap). Useful for
+   sanity-checking that vTypes are behaving as designed.
+
+If `make sumo-gui-medium` errors out: confirm the venv is synced
+(`uv sync --extra sumo`) and that `uv run sumo --version` prints `1.26.0`.
+
 ## Density rationale
 
 | Density | Total Poisson rate | Mean inter-arrival | Steady-state cars on 1 km road |
@@ -89,4 +119,5 @@ traffic personality.
 
 ## Last updated
 
-2026-04-26 · `494e850` (highway_3lane scenario authored, smoke test passes)
+2026-04-26 · `494e850` (scenario authored, headless smoke test passes) +
+visual-debugging recipe appended pending commit
