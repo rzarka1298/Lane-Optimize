@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Three vehicle profiles for background traffic. Each tunes:
+    - Krauss car-following (longitudinal): accel, decel, sigma, tau, minGap
+    - LC2013 lane-change (lateral): lcCooperative, lcSpeedGain, lcKeepRight, lcAssertive
+
+  The ego (RL-controlled) vehicle is added at runtime via traci.vehicle.add()
+  with vtype="ego" — see laneiq/env/highway_env.py (Week 2). Its lane-change
+  *strategy* is fully overridden via setLaneChangeMode(0) so the RL policy
+  is the sole decider; only Krauss car-following stays under SUMO control.
+
+  Tuning rationale lives in Project-Documentation/concepts/01-sumo-traffic-model.md.
+-->
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+
+    <!-- Aggressive: high top speed, short headway, tailgates, eager to overtake,
+         won't yield. The "BMW driver" archetype. -->
+    <vType id="aggressive" vClass="passenger"
+           maxSpeed="40.0" accel="3.0" decel="5.0" emergencyDecel="9.0"
+           sigma="0.1" tau="0.8" minGap="1.5" length="4.5"
+           lcStrategic="1.0" lcCooperative="0.2" lcSpeedGain="2.0" lcKeepRight="0.0"
+           lcAssertive="1.5" lcImpatience="0.5"
+           color="220,40,40" guiShape="passenger/sedan"/>
+
+    <!-- Normal: realistic everyday driver — moderate speed, average dawdling,
+         cooperative, prefers right but will overtake when natural. -->
+    <vType id="normal" vClass="passenger"
+           maxSpeed="33.33" accel="2.5" decel="4.5" emergencyDecel="9.0"
+           sigma="0.5" tau="1.2" minGap="2.5" length="4.5"
+           lcStrategic="1.0" lcCooperative="1.0" lcSpeedGain="1.0" lcKeepRight="1.0"
+           lcAssertive="1.0" lcImpatience="0.0"
+           color="240,240,240" guiShape="passenger"/>
+
+    <!-- Slow: low top speed, large headway, sticks to the rightmost lane,
+         rarely overtakes. The "lorry / cautious driver" archetype. -->
+    <vType id="slow" vClass="passenger"
+           maxSpeed="25.0" accel="1.5" decel="4.0" emergencyDecel="7.0"
+           sigma="0.3" tau="1.5" minGap="3.0" length="5.5"
+           lcStrategic="1.0" lcCooperative="1.0" lcSpeedGain="0.3" lcKeepRight="2.0"
+           lcAssertive="0.5" lcImpatience="0.0"
+           color="40,80,200" guiShape="passenger/hatchback"/>
+
+    <!-- Ego: the RL-controlled vehicle. Krauss longitudinal model is shared
+         with `normal`; lane-change is owned by the policy (see env code). -->
+    <vType id="ego" vClass="passenger"
+           maxSpeed="40.0" accel="2.5" decel="4.5" emergencyDecel="9.0"
+           sigma="0.0" tau="1.0" minGap="2.0" length="4.5"
+           color="255,215,0" guiShape="passenger/sedan"/>
+
+</additional>

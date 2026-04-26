@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Single edge: 3 lanes, 1 km, 36.11 m/s ≈ 130 km/h speed limit (autobahn-like).
+  Lane indices in SUMO: 0 = rightmost (slow lane), 2 = leftmost (fast lane).
+-->
+<edges xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/edges_file.xsd">
+    <edge id="e1" from="start" to="end" numLanes="3" speed="36.11"/>
+</edges>

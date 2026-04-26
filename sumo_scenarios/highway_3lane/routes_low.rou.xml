@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LOW density: total arrival rate ~0.25 veh/s ≈ one car every 4 s.
+  At ~30 s mean traversal time → ~7-8 background vehicles on the 1 km road.
+  Mix: 60% normal · 25% aggressive · 15% slow.
+
+  period="exp(λ)" gives Poisson arrivals at rate λ (vehicles/sec).
+-->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+
+    <route id="r_through" edges="e1"/>
+
+    <flow id="f_normal"     type="normal"     route="r_through"
+          begin="0" end="3600" period="exp(0.15)"
+          departLane="best" departSpeed="desired"/>
+
+    <flow id="f_aggressive" type="aggressive" route="r_through"
+          begin="0" end="3600" period="exp(0.06)"
+          departLane="best" departSpeed="desired"/>
+
+    <flow id="f_slow"       type="slow"       route="r_through"
+          begin="0" end="3600" period="exp(0.04)"
+          departLane="0"    departSpeed="desired"/>
+
+</routes>

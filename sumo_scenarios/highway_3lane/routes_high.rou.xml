@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HIGH density: total arrival rate ~1.45 veh/s ≈ one car every 0.7 s.
+  At ~30 s mean traversal time → ~45 background vehicles on the 1 km road.
+  Approaching capacity but not deadlocked. This is where parameter-sharing
+  multi-agent RL (Week 5) is supposed to shine vs. single-agent.
+  Mix: 60% normal · 25% aggressive · 15% slow.
+-->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+
+    <route id="r_through" edges="e1"/>
+
+    <flow id="f_normal"     type="normal"     route="r_through"
+          begin="0" end="3600" period="exp(0.85)"
+          departLane="best" departSpeed="desired"/>
+
+    <flow id="f_aggressive" type="aggressive" route="r_through"
+          begin="0" end="3600" period="exp(0.40)"
+          departLane="best" departSpeed="desired"/>
+
+    <flow id="f_slow"       type="slow"       route="r_through"
+          begin="0" end="3600" period="exp(0.20)"
+          departLane="0"    departSpeed="desired"/>
+
+</routes>

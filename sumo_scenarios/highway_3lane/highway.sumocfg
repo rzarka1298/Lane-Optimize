@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Default SUMO config for the 3-lane highway. Pair with `make sumo-gui-medium`
+  (route file is overridden in the Makefile shortcuts).
+
+  Collision policy:
+    collision.action=warn        → don't teleport on collision; let TraCI see it.
+    collision.mingap-factor=0    → register collisions at zero overlap, not at
+                                   a generous safety distance (we *want* to know
+                                   when the RL ego has actually crashed).
+
+  Step length 0.1 s = 10 Hz simulation. Matches the WebSocket stream rate the
+  live demo will use (Week 5+).
+-->
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="highway.net.xml"/>
+        <route-files value="routes_medium.rou.xml"/>
+        <additional-files value="vtypes.add.xml"/>
+    </input>
+
+    <time>
+        <begin value="0"/>
+        <end value="3600"/>
+        <step-length value="0.1"/>
+    </time>
+
+    <processing>
+        <ignore-route-errors value="true"/>
+        <collision.action value="warn"/>
+        <collision.mingap-factor value="0"/>
+        <time-to-teleport value="-1"/>
+    </processing>
+
+    <report>
+        <verbose value="false"/>
+        <no-step-log value="true"/>
+        <no-warnings value="false"/>
+    </report>
+
+</configuration>
