@@ -17,16 +17,18 @@ install-dev:
 scenario:
 	cd $(SCENARIO_DIR) && bash build.sh
 
+# SUMO binaries are bundled inside the eclipse-sumo wheel and shimmed into
+# .venv/bin/ — `uv run` is enough, no SUMO_HOME or Homebrew needed.
 sumo-gui: sumo-gui-medium
 
 sumo-gui-low:
-	sumo-gui -c $(SCENARIO_DIR)/highway.sumocfg --route-files $(SCENARIO_DIR)/routes_low.rou.xml
+	$(UV) run sumo-gui -c $(SCENARIO_DIR)/highway.sumocfg --route-files $(SCENARIO_DIR)/routes_low.rou.xml
 
 sumo-gui-medium:
-	sumo-gui -c $(SCENARIO_DIR)/highway.sumocfg --route-files $(SCENARIO_DIR)/routes_medium.rou.xml
+	$(UV) run sumo-gui -c $(SCENARIO_DIR)/highway.sumocfg --route-files $(SCENARIO_DIR)/routes_medium.rou.xml
 
 sumo-gui-high:
-	sumo-gui -c $(SCENARIO_DIR)/highway.sumocfg --route-files $(SCENARIO_DIR)/routes_high.rou.xml
+	$(UV) run sumo-gui -c $(SCENARIO_DIR)/highway.sumocfg --route-files $(SCENARIO_DIR)/routes_high.rou.xml
 
 # --- Training -------------------------------------------------------------
 

@@ -35,7 +35,9 @@ A live React + FastAPI dashboard streams the simulation and the agent's decision
 
 ## Quickstart
 
-> ⚠️ Requires Python 3.11 and [uv](https://docs.astral.sh/uv/).
+> ⚠️ Requires Python 3.11 and [uv](https://docs.astral.sh/uv/). No system SUMO install
+> needed — the `eclipse-sumo` PyPI wheel bundles `sumo`, `sumo-gui`, `netconvert`,
+> and `netedit` inside the venv.
 
 ```bash
 uv sync --extra sumo --extra rl --extra multiagent --extra dev

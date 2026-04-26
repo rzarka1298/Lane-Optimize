@@ -20,9 +20,12 @@ dependencies = [
 [project.optional-dependencies]
 sumo = [
     "eclipse-sumo>=1.20",
-    "libsumo>=1.20",
     "traci>=1.20",
     "sumolib>=1.20",
+    # libsumo intentionally omitted: no macOS arm64 wheel as of 1.26.
+    # We use TraCI everywhere; if Week 3 profiling shows env-step rate is the
+    # training bottleneck, build libsumo from source and add the runtime toggle
+    # back in `laneiq/env/sumo_runtime.py`.
 ]
 rl = [
     "stable-baselines3>=2.3",

@@ -17,7 +17,10 @@ the original PRD is at [`Lane-Optimize-PRD.pdf`](Lane-Optimize-PRD.pdf).
 
 ## Locked-in technical decisions (do not relitigate without asking)
 
-- **Simulator:** SUMO via `libsumo` (training) and `traci` (live demo). Not custom, not highway-env.
+- **Simulator:** SUMO via `traci` everywhere (training + live demo). `libsumo` is intentionally
+  *not* used: no macOS arm64 wheel ships on PyPI as of 1.26. Week 3 profiling will decide
+  whether the ~8× speed-up justifies a from-source libsumo build. Until then, single runtime
+  path keeps the env code simple.
 - **DQN:** from scratch in PyTorch. **PPO:** via Stable-Baselines3.
 - **Multi-agent:** parameter-sharing PPO over a `pettingzoo.ParallelEnv` (committed stretch goal).
 - **Compute:** Apple Silicon, MPS backend. No CUDA assumptions.
