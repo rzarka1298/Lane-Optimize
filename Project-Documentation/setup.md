@@ -73,19 +73,194 @@ brew install dlr-ts/sumo/sumo   # builds with libsumo Python bindings
 
 This is captured as Task #5 in the live task list.
 
-## Verifying the install
+## Get the project running (full walkthrough)
 
-Smoke checks that should pass after every fresh sync:
+Use this section any time you want to confirm the project is healthy from
+scratch — after pulling new commits, switching machines, or clearing caches.
+Steps are ordered: each one builds on the prior. If one fails, stop and fix
+before moving on.
+
+### 0. Prereqs
+
+You need:
+
+- macOS (Apple Silicon tested) or Linux. Windows untested.
+- [`uv`](https://docs.astral.sh/uv/) on your `PATH`. If missing:
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Python 3.11 — `uv` will fetch it automatically if you don't have it.
+
+### 1. Clone (skip if already done)
 
 ```bash
-uv run pytest                                          # tests green
-uv run ruff check laneiq tests scripts                 # lint green
-uv run python -c "import traci, sumolib; print('OK')"  # SUMO bindings importable
-uv run sumo --version                                  # SUMO CLI runs
+git clone <repo-url> Lane-Optimize
+cd Lane-Optimize
 ```
 
-The `tests/test_smoke.py` suite asserts the `laneiq` package imports cleanly —
-a fast guard against scaffolding regressions.
+### 2. Sync dependencies
+
+```bash
+uv sync --extra dev --extra sumo
+```
+
+Adding `--extra rl` and `--extra multiagent` is fine but not needed until
+Week 4–5. The sync downloads ~150 MB (the eclipse-sumo wheel) the first
+time; subsequent runs are seconds.
+
+You should see something like:
+
+```
+Resolved 80 packages
+Installed N packages
++ eclipse-sumo==1.26.0
++ traci==1.26.0
++ sumolib==1.26.0
++ ...
+```
+
+### 3. Confirm the SUMO bindings + binaries
+
+```bash
+uv run sumo --version
+```
+
+Expected: `Eclipse SUMO sumo 1.26.0` followed by a build-features line. If
+this errors with "command not found", the venv didn't create entry-point
+shims — re-run `uv sync --extra sumo` and check `ls .venv/bin/sumo*`.
+
+```bash
+uv run python -c "import traci, sumolib; print('bindings OK')"
+```
+
+Expected: `bindings OK`. Any ImportError means the wheel didn't install —
+clear the venv (`rm -rf .venv && uv sync --extra dev --extra sumo`) and
+retry.
+
+### 4. Lint everything
+
+```bash
+make lint
+```
+
+or directly:
+
+```bash
+uv run ruff check laneiq tests scripts
+```
+
+Expected: `All checks passed!`. If anything fails, it's likely a doc edit
+that changed line counts in code blocks — fix and retry.
+
+### 5. Run the test suite
+
+The full suite (currently 7 tests) takes ~1.2 s and includes one
+integration test that actually launches SUMO. To run it all:
+
+```bash
+uv run pytest
+```
+
+Expected output:
+
+```
+tests/test_smoke.py .                                  [ 14%]
+tests/test_sumo_runtime.py ......                      [100%]
+
+============================== 7 passed in ~1.2s ===============================
+```
+
+For just the fast tests (skip the SUMO-launching integration test):
+
+```bash
+make test            # equivalent to: uv run pytest -m "not slow"
+```
+
+If the slow `test_sumo_session_steps_and_closes` fails, the most common
+cause is a stuck SUMO process from a previous run holding the TraCI port —
+`pkill -f sumo` then retry.
+
+### 6. Eyeball the highway scenario in `sumo-gui`
+
+The headless tests confirm the scenario *parses* and *runs*. To confirm it
+*looks right*:
+
+```bash
+make sumo-gui-medium       # default density (~20 cars on screen)
+# or
+make sumo-gui-low          # ~7-8 cars
+make sumo-gui-high         # ~40-45 cars
+```
+
+A native macOS window opens titled `highway.sumocfg - SUMO 1.26.0`. The
+sim is paused at t=0. Recipe to verify:
+
+1. **Set delay.** Top toolbar → "Delay (ms)" field → type `100` → Enter.
+   (`0` runs as fast as the GPU can render — too fast to watch.)
+2. **Press play** (the green ▶ in the top-left).
+3. **Watch for ~30s of sim time:**
+   - Cars enter from the left, exit at the right.
+   - **Red** (aggressive) cars overtake on either side; rarely yield.
+   - **Blue** (slow) cars stick to the rightmost lane.
+   - **White** (normal) cars: balanced mix.
+   - The bottom message panel stays quiet (no "collision" / "teleport"
+     warnings during normal flow).
+4. **Inspect a car.** Right-click any vehicle → "Show Parameter" → live
+   `speed`, `lane`, `accel`, `gap to leader`. Useful for verifying the
+   vTypes are behaving as designed (aggressive cars tailgate; slow cars
+   keep distance).
+
+Full visual-debug recipe: `Project-Documentation/sumo_scenarios/OVERVIEW.md`.
+
+### 7. Quick TraCI sanity script (optional)
+
+To confirm you can drive the simulator from Python end-to-end:
+
+```bash
+uv run python -c "
+import traci
+from laneiq.env.sumo_runtime import sumo_session
+
+with sumo_session(seed=42, end_time=60.0):
+    for _ in range(50):
+        traci.simulationStep()
+    print('time:', traci.simulation.getTime(), 'sec')
+    print('vehicles:', len(traci.vehicle.getIDList()))
+"
+```
+
+Expected: `time: 5.0 sec` plus a vehicle count between 1 and 4. This is the
+exact pattern the Gym env will use, just simpler.
+
+### 8. (Optional) Re-generate the SUMO network
+
+If you edit `highway.nod.xml` or `highway.edg.xml`, regenerate `highway.net.xml`:
+
+```bash
+make scenario
+```
+
+This runs `sumo_scenarios/highway_3lane/build.sh`, which calls `netconvert`
+via `uv run`. The generated file is committed for cold-clone repro; a
+re-run only changes it if your edits actually altered the topology.
+
+## Common failures, fixed
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `sumo: command not found` after `uv sync` | venv shims missing | `rm -rf .venv && uv sync --extra dev --extra sumo` |
+| `pytest` hangs forever during slow test | stale SUMO process | `pkill -f sumo` |
+| `sumo-gui` opens but window is blank | net not generated yet | `make scenario` |
+| `'--' sequence is illegal in comment` | XML comment with `--` inside | edit the offending file; `--` is forbidden in XML comment bodies |
+| `MPS backend out of memory` | (Week 2+) batch too large | drop batch size or move to CPU; see Apple Silicon notes below |
+
+## Verifying the install (fast smoke-only)
+
+If you just want a quick "is it broken" check after a small change:
+
+```bash
+make lint && make test
+```
+
+That's ~3 seconds total and covers the green-CI gate.
 
 ## Apple Silicon / MPS notes
 

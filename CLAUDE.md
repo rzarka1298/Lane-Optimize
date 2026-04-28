@@ -72,19 +72,53 @@ they should understand what's there and *what not to break*. Write for that read
 
 ---
 
-## OVERVIEW.md content contract
+## Doc shapes inside `Project-Documentation/`
 
-Each `Project-Documentation/<path>/OVERVIEW.md` should contain:
+Two kinds of mirrored docs per code folder:
+
+### 1. `OVERVIEW.md` — folder summary
+
+One per code folder. The "lobby" for that folder. Contains:
 
 1. **Purpose** — one paragraph: what this folder is for.
-2. **Status** — current implementation state (scaffold only / partial / complete).
-3. **Key files** — bulleted list with one-line summaries. Updated when files are added/removed.
+2. **Status** — current implementation state (scaffold / partial / complete).
+3. **Files in this folder** — bulleted list of the per-file docs that live
+   alongside this OVERVIEW.md, with one-line summaries. Acts as the index.
 4. **Public API** — what other parts of the codebase import from here.
-5. **Invariants & gotchas** — "don't change X without Y" rules, hidden constraints,
-   bugs we worked around. This is the most valuable section for future-Claude.
-6. **Last updated** — ISO date + git SHA prefix of the commit that produced this state.
+5. **Invariants & gotchas** — folder-wide "don't change X without Y" rules.
+   Per-file gotchas live in the per-file doc.
+6. **Last updated** — ISO date + git SHA prefix of the most recent commit
+   that touched anything in this folder.
 
-Keep it tight. A good OVERVIEW.md is 50–200 lines.
+Keep OVERVIEW.md ≤120 lines. It's an index, not a textbook.
+
+### 2. Per-file `<filename>.md` — detailed component doc
+
+One per non-trivial code file (or per logical component for grouped XML
+configs — e.g., `routes.md` covers all three `routes_*.rou.xml`). Contains:
+
+1. **What** — one paragraph: what this file/component does.
+2. **Public API / Schema** — the exported functions, classes, or XML
+   elements with their signatures or attribute lists.
+3. **Design notes** — why it's shaped this way; alternatives considered and
+   rejected; any non-obvious trade-offs. This is where deep content lives.
+4. **Invariants & gotchas** — file-specific rules. Things that would surprise
+   a new reader.
+5. **Tests / how to verify** — what tests cover this and how to run them.
+6. **Last updated** — ISO date + git SHA prefix.
+
+Keep per-file docs ≤150 lines. If one balloons past that, it probably
+should be split into a concept note in `Project-Documentation/concepts/`
+plus a leaner per-file doc.
+
+### When to skip
+
+- Trivial files (single-line `__init__.py`, `.gitkeep`, generated outputs
+  like `highway.net.xml`) don't get their own doc — mention them in the
+  parent OVERVIEW.md "Files in this folder" list and that's enough.
+- Cross-cutting concerns that don't belong to any single file (dev
+  environment, deployment, training reproducibility) live as **top-level
+  docs** alongside `setup.md`, not buried in a code-folder mirror.
 
 ---
 
