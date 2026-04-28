@@ -64,5 +64,5 @@ ego: `traci.vehicle.add(vehID="ego", typeID="ego", ...)`.
 
 ## Last updated
 
-2026-04-26 · `2499dd8` (visual-debug recipe was last addition); per-file
-docs split out from this OVERVIEW.md pending commit.
+2026-04-26 · `d9d8601` (per-file docs split out); content was last touched
+by `2499dd8` (visual-debug recipe added).

@@ -60,4 +60,4 @@ Full schema and examples in [`sumo_runtime.md`](sumo_runtime.md).
 
 ## Last updated
 
-2026-04-26 · `1f423f2` (sumo_runtime.py landed; per-file doc split pending commit)
+2026-04-26 · `d9d8601` (per-file doc split; sumo_runtime.py at `1f423f2`)

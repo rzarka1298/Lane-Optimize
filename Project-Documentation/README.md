@@ -66,7 +66,7 @@ ordering; reference each one by number from per-file docs.
 
 | Path | Status | Last touched |
 | --- | --- | --- |
-| [`setup.md`](setup.md) | ✅ Dev env + install + full verification walkthrough | pending |
+| [`setup.md`](setup.md) | ✅ Dev env + install + full verification walkthrough | `d9d8601` |
 
 ### Concept notes
 
@@ -79,8 +79,8 @@ ordering; reference each one by number from per-file docs.
 | Path | Status | Last touched |
 | --- | --- | --- |
 | [`laneiq/OVERVIEW.md`](laneiq/OVERVIEW.md) | ✅ Scaffold-only state recorded | `be30837` |
-| [`laneiq/env/OVERVIEW.md`](laneiq/env/OVERVIEW.md) | ✅ `sumo_runtime.py` landed; rest pending Week 2 | pending |
-| [`laneiq/env/sumo_runtime.md`](laneiq/env/sumo_runtime.md) | ✅ Process lifecycle helpers documented | pending |
+| [`laneiq/env/OVERVIEW.md`](laneiq/env/OVERVIEW.md) | ✅ `sumo_runtime.py` landed; rest pending Week 2 | `d9d8601` |
+| [`laneiq/env/sumo_runtime.md`](laneiq/env/sumo_runtime.md) | ✅ Process lifecycle helpers documented | `d9d8601` |
 | `laneiq/env/observations.md` | ⏳ Task #7 |  — |
 | `laneiq/env/actions.md` | ⏳ Task #8 |  — |
 | `laneiq/env/rewards.md` | ⏳ Task #9 |  — |
@@ -94,11 +94,11 @@ ordering; reference each one by number from per-file docs.
 
 | Path | Status | Last touched |
 | --- | --- | --- |
-| [`sumo_scenarios/OVERVIEW.md`](sumo_scenarios/OVERVIEW.md) | ✅ Trimmed to summary; per-file docs split out | pending |
-| [`sumo_scenarios/network.md`](sumo_scenarios/network.md) | ✅ Nodes + edges + net | pending |
-| [`sumo_scenarios/vtypes.md`](sumo_scenarios/vtypes.md) | ✅ Four vehicle profiles | pending |
-| [`sumo_scenarios/routes.md`](sumo_scenarios/routes.md) | ✅ Poisson flows × 3 densities | pending |
-| [`sumo_scenarios/config.md`](sumo_scenarios/config.md) | ✅ sumocfg + build.sh | pending |
+| [`sumo_scenarios/OVERVIEW.md`](sumo_scenarios/OVERVIEW.md) | ✅ Trimmed to summary; per-file docs split out | `d9d8601` |
+| [`sumo_scenarios/network.md`](sumo_scenarios/network.md) | ✅ Nodes + edges + net | `d9d8601` |
+| [`sumo_scenarios/vtypes.md`](sumo_scenarios/vtypes.md) | ✅ Four vehicle profiles | `d9d8601` |
+| [`sumo_scenarios/routes.md`](sumo_scenarios/routes.md) | ✅ Poisson flows × 3 densities | `d9d8601` |
+| [`sumo_scenarios/config.md`](sumo_scenarios/config.md) | ✅ sumocfg + build.sh | `d9d8601` |
 
 ### Other
 
