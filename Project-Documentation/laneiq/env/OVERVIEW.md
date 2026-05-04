@@ -10,9 +10,10 @@ in the environment* lives in `laneiq/agents/`.
 
 ## Status
 
-🚧 **Foundation laid.** `sumo_runtime.py` is in and tested. Next files due in
-Week 2: `observations.py`, `actions.py`, `rewards.py`, `highway_env.py`. The
-PettingZoo wrapper lands in Week 5.
+🚧 **Foundation + observation builder laid.** `sumo_runtime.py` and
+`observations.py` are in and tested. Next files due in Week 2:
+`actions.py`, `rewards.py`, `highway_env.py`. The PettingZoo wrapper lands
+in Week 5.
 
 ## Files in this folder
 
@@ -20,7 +21,8 @@ Per-file docs live alongside this OVERVIEW.md:
 
 - **[`sumo_runtime.md`](sumo_runtime.md)** — Process lifecycle: `build_argv`,
   `sumo_session`, `sumo_binary`. Single seam for libsumo swap. ✅
-- **`observations.md`** — Fixed-length 24-dim obs vector. ⏳ Task #7.
+- **[`observations.md`](observations.md)** — Fixed-length 25-dim obs vector;
+  `build_observation` + `ObservationBuilder`. ✅
 - **`actions.md`** — Action enum + TraCI applier. ⏳ Task #8.
 - **`rewards.md`** — Reward composer with config. ⏳ Task #9.
 - **`highway_env.md`** — `LaneIQEnv(gymnasium.Env)`. ⏳ Task #10.
@@ -30,20 +32,23 @@ Per-file docs live alongside this OVERVIEW.md:
 ## Public API (today)
 
 ```python
+# SUMO process lifecycle
 from laneiq.env.sumo_runtime import (
-    DEFAULT_SCENARIO_DIR,    # Path to sumo_scenarios/highway_3lane/
-    DEFAULT_SUMOCFG,         # Path to highway.sumocfg
-    sumo_binary,             # (gui: bool) -> str
-    build_argv,              # construct argv for traci.start
-    sumo_session,            # context manager
+    DEFAULT_SCENARIO_DIR, DEFAULT_SUMOCFG,
+    sumo_binary, build_argv, sumo_session,
+)
+
+# Observation building
+from laneiq.env.observations import (
+    OBS_DIM, OBS_NAMES, OBSERVATION_SPEC,
+    DEFAULT_OBSERVATION_CONFIG,
+    ObservationConfig, ObservationSpec,
+    build_observation, ego_present, ObservationBuilder,
 )
 ```
 
-`sumo_session()` is for tests and ad-hoc scripts. The Gym env (landing in
-Week 2) will use `build_argv()` directly because it manages its TraCI
-connection lifetime across many `reset()` calls inside its own class.
-
-Full schema and examples in [`sumo_runtime.md`](sumo_runtime.md).
+Full schemas and examples in the per-file docs:
+[`sumo_runtime.md`](sumo_runtime.md), [`observations.md`](observations.md).
 
 ## Folder-wide invariants
 
@@ -60,4 +65,5 @@ Full schema and examples in [`sumo_runtime.md`](sumo_runtime.md).
 
 ## Last updated
 
-2026-04-26 · `d9d8601` (per-file doc split; sumo_runtime.py at `1f423f2`)
+2026-05-03 · pending commit (observations.py landed; per-file doc added);
+prior `1f423f2` (sumo_runtime.py landed); doc split at `d9d8601`
