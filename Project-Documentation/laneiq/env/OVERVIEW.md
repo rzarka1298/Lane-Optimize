@@ -65,5 +65,5 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-03 · pending commit (observations.py landed; per-file doc added);
+2026-05-03 · `0477f0d` (observations.py landed; per-file doc added);
 prior `1f423f2` (sumo_runtime.py landed); doc split at `d9d8601`

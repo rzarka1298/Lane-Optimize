@@ -81,7 +81,7 @@ ordering; reference each one by number from per-file docs.
 | [`laneiq/OVERVIEW.md`](laneiq/OVERVIEW.md) | ✅ Scaffold-only state recorded | `be30837` |
 | [`laneiq/env/OVERVIEW.md`](laneiq/env/OVERVIEW.md) | ✅ `sumo_runtime.py` landed; rest pending Week 2 | `d9d8601` |
 | [`laneiq/env/sumo_runtime.md`](laneiq/env/sumo_runtime.md) | ✅ Process lifecycle helpers documented | `d9d8601` |
-| [`laneiq/env/observations.md`](laneiq/env/observations.md) | ✅ 25-dim obs vector; `build_observation` + `ObservationBuilder` | pending |
+| [`laneiq/env/observations.md`](laneiq/env/observations.md) | ✅ 25-dim obs vector; `build_observation` + `ObservationBuilder` | `0477f0d` |
 | `laneiq/env/actions.md` | ⏳ Task #8 |  — |
 | `laneiq/env/rewards.md` | ⏳ Task #9 |  — |
 | `laneiq/env/highway_env.md` | ⏳ Task #10 |  — |

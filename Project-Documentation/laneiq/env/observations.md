@@ -190,4 +190,4 @@ uv run pytest tests/test_observations.py -v                # all
 
 ## Last updated
 
-2026-05-03 · pending commit (initial implementation; 17 tests green; lint clean)
+2026-05-03 · `0477f0d` (initial implementation; 17 tests green; lint clean)
