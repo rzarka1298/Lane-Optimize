@@ -209,4 +209,4 @@ that's the per-component plot's job to explain *why*.
 
 ## Last updated
 
-2026-05-05 · pending commit (concept note authored alongside Task #9)
+2026-05-05 · `ee53ff5` (concept note authored alongside Task #9)

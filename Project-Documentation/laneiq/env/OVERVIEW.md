@@ -81,5 +81,5 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-05 · pending commit (rewards.py landed); prior `b4d7fd1` (actions);
+2026-05-05 · `ee53ff5` (rewards.py landed); prior `b4d7fd1` (actions);
 `0477f0d` (observations); `1f423f2` (sumo_runtime); doc split at `d9d8601`

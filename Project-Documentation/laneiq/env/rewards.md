@@ -155,4 +155,4 @@ uv run pytest tests/test_rewards.py -v   # ~0.16 s (no SUMO)
 
 ## Last updated
 
-2026-05-05 · pending commit (initial implementation; 31 tests green; lint clean)
+2026-05-05 · `ee53ff5` (initial implementation; 31 tests green; lint clean)
