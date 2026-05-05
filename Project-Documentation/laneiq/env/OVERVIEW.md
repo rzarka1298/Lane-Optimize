@@ -85,6 +85,6 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-05 · pending commit (highway_env.py landed; env_checker passes);
+2026-05-05 · `7c6a6e9` (highway_env.py landed; env_checker passes);
 prior `ee53ff5` (rewards); `b4d7fd1` (actions); `0477f0d` (observations);
 `1f423f2` (sumo_runtime); doc split at `d9d8601`

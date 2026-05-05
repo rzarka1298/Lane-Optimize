@@ -178,5 +178,5 @@ uv run pytest tests/test_highway_env.py -v -m "slow"       # 9 slow (~20 s)
 
 ## Last updated
 
-2026-05-05 · pending commit (initial implementation; 15 tests green; lint clean;
+2026-05-05 · `7c6a6e9` (initial implementation; 15 tests green; lint clean;
 env_checker passes; 93-test full suite, 24.5 s)

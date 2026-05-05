@@ -85,7 +85,7 @@ ordering; reference each one by number from per-file docs.
 | [`laneiq/env/observations.md`](laneiq/env/observations.md) | ✅ 25-dim obs vector; `build_observation` + `ObservationBuilder` | `0477f0d` |
 | [`laneiq/env/actions.md`](laneiq/env/actions.md) | ✅ `Action` enum + `apply_action` + `valid_actions_mask` + masking | `b4d7fd1` |
 | [`laneiq/env/rewards.md`](laneiq/env/rewards.md) | ✅ `RewardConfig` + `compute_reward` (scalar + per-component dict) | `ee53ff5` |
-| [`laneiq/env/highway_env.md`](laneiq/env/highway_env.md) | ✅ `LaneIQEnv(gymnasium.Env)` — passes `env_checker` | pending |
+| [`laneiq/env/highway_env.md`](laneiq/env/highway_env.md) | ✅ `LaneIQEnv(gymnasium.Env)` — passes `env_checker` | `7c6a6e9` |
 | `laneiq/agents/dqn/` | ⏳ Tasks #12–13 |  — |
 | `laneiq/agents/baselines/` | ⏳ Task #11 |  — |
 | `laneiq/eval/` | ⏳ Week 3 |  — |
