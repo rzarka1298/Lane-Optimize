@@ -74,5 +74,5 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-04 · pending commit (actions.py landed); prior `0477f0d`
+2026-05-04 · `b4d7fd1` (actions.py landed); prior `0477f0d`
 (observations.py); `1f423f2` (sumo_runtime.py); doc split at `d9d8601`

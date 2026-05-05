@@ -177,4 +177,4 @@ uv run pytest tests/test_actions.py -v -m "slow"      # 1 SUMO test
 
 ## Last updated
 
-2026-05-04 · pending commit (initial implementation; 23 tests green; lint clean)
+2026-05-04 · `b4d7fd1` (initial implementation; 23 tests green; lint clean)

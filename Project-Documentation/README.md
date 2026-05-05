@@ -82,7 +82,7 @@ ordering; reference each one by number from per-file docs.
 | [`laneiq/env/OVERVIEW.md`](laneiq/env/OVERVIEW.md) | ✅ `sumo_runtime.py` landed; rest pending Week 2 | `d9d8601` |
 | [`laneiq/env/sumo_runtime.md`](laneiq/env/sumo_runtime.md) | ✅ Process lifecycle helpers documented | `d9d8601` |
 | [`laneiq/env/observations.md`](laneiq/env/observations.md) | ✅ 25-dim obs vector; `build_observation` + `ObservationBuilder` | `0477f0d` |
-| [`laneiq/env/actions.md`](laneiq/env/actions.md) | ✅ `Action` enum + `apply_action` + `valid_actions_mask` + masking | pending |
+| [`laneiq/env/actions.md`](laneiq/env/actions.md) | ✅ `Action` enum + `apply_action` + `valid_actions_mask` + masking | `b4d7fd1` |
 | `laneiq/env/rewards.md` | ⏳ Task #9 |  — |
 | `laneiq/env/highway_env.md` | ⏳ Task #10 |  — |
 | `laneiq/agents/dqn/` | ⏳ Tasks #12–13 |  — |
