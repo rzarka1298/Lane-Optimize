@@ -10,10 +10,10 @@ in the environment* lives in `laneiq/agents/`.
 
 ## Status
 
-🚧 **Foundation + observation builder laid.** `sumo_runtime.py` and
-`observations.py` are in and tested. Next files due in Week 2:
-`actions.py`, `rewards.py`, `highway_env.py`. The PettingZoo wrapper lands
-in Week 5.
+🚧 **Foundation + observations + actions laid.** `sumo_runtime.py`,
+`observations.py`, and `actions.py` are in and tested. Next files due in
+Week 2: `rewards.py`, `highway_env.py`. The PettingZoo wrapper lands in
+Week 5.
 
 ## Files in this folder
 
@@ -23,7 +23,8 @@ Per-file docs live alongside this OVERVIEW.md:
   `sumo_session`, `sumo_binary`. Single seam for libsumo swap. ✅
 - **[`observations.md`](observations.md)** — Fixed-length 25-dim obs vector;
   `build_observation` + `ObservationBuilder`. ✅
-- **`actions.md`** — Action enum + TraCI applier. ⏳ Task #8.
+- **[`actions.md`](actions.md)** — `Action` enum, `apply_action`,
+  `valid_actions_mask`, `disable_sumo_lane_change`. ✅
 - **`rewards.md`** — Reward composer with config. ⏳ Task #9.
 - **`highway_env.md`** — `LaneIQEnv(gymnasium.Env)`. ⏳ Task #10.
 - **`spawning.md`** — Ego respawn logic (with `highway_env.py`). ⏳ Task #10.
@@ -45,10 +46,18 @@ from laneiq.env.observations import (
     ObservationConfig, ObservationSpec,
     build_observation, ego_present, ObservationBuilder,
 )
+
+# Discrete actions + masking
+from laneiq.env.actions import (
+    Action, N_ACTIONS, ACTION_SPACE, ACTION_NAMES,
+    disable_sumo_lane_change,
+    apply_action, valid_actions_mask, mask_invalid_q_values,
+)
 ```
 
 Full schemas and examples in the per-file docs:
-[`sumo_runtime.md`](sumo_runtime.md), [`observations.md`](observations.md).
+[`sumo_runtime.md`](sumo_runtime.md), [`observations.md`](observations.md),
+[`actions.md`](actions.md).
 
 ## Folder-wide invariants
 
@@ -65,5 +74,5 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-03 · `0477f0d` (observations.py landed; per-file doc added);
-prior `1f423f2` (sumo_runtime.py landed); doc split at `d9d8601`
+2026-05-04 · pending commit (actions.py landed); prior `0477f0d`
+(observations.py); `1f423f2` (sumo_runtime.py); doc split at `d9d8601`
