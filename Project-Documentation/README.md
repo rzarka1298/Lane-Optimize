@@ -73,6 +73,7 @@ ordering; reference each one by number from per-file docs.
 | Path | Status | Last touched |
 | --- | --- | --- |
 | [`concepts/01-sumo-traffic-model.md`](concepts/01-sumo-traffic-model.md) | ✅ Krauss + LC2013 explainer; vType design rationale | `494e850` |
+| [`concepts/02-reward-shaping.md`](concepts/02-reward-shaping.md) | ✅ 6-component reward design; failure modes; Pareto sweep narrative | pending |
 
 ### `laneiq/` (Python package)
 
@@ -83,7 +84,7 @@ ordering; reference each one by number from per-file docs.
 | [`laneiq/env/sumo_runtime.md`](laneiq/env/sumo_runtime.md) | ✅ Process lifecycle helpers documented | `d9d8601` |
 | [`laneiq/env/observations.md`](laneiq/env/observations.md) | ✅ 25-dim obs vector; `build_observation` + `ObservationBuilder` | `0477f0d` |
 | [`laneiq/env/actions.md`](laneiq/env/actions.md) | ✅ `Action` enum + `apply_action` + `valid_actions_mask` + masking | `b4d7fd1` |
-| `laneiq/env/rewards.md` | ⏳ Task #9 |  — |
+| [`laneiq/env/rewards.md`](laneiq/env/rewards.md) | ✅ `RewardConfig` + `compute_reward` (scalar + per-component dict) | pending |
 | `laneiq/env/highway_env.md` | ⏳ Task #10 |  — |
 | `laneiq/agents/dqn/` | ⏳ Tasks #12–13 |  — |
 | `laneiq/agents/baselines/` | ⏳ Task #11 |  — |

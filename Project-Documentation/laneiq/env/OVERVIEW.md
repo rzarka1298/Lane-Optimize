@@ -10,10 +10,10 @@ in the environment* lives in `laneiq/agents/`.
 
 ## Status
 
-🚧 **Foundation + observations + actions laid.** `sumo_runtime.py`,
-`observations.py`, and `actions.py` are in and tested. Next files due in
-Week 2: `rewards.py`, `highway_env.py`. The PettingZoo wrapper lands in
-Week 5.
+🚧 **All inner pieces laid; only `LaneIQEnv` left to stitch them together.**
+`sumo_runtime.py`, `observations.py`, `actions.py`, and `rewards.py` are
+in and tested. Next file due in Week 2: `highway_env.py` (Task #10). The
+PettingZoo wrapper lands in Week 5.
 
 ## Files in this folder
 
@@ -25,7 +25,8 @@ Per-file docs live alongside this OVERVIEW.md:
   `build_observation` + `ObservationBuilder`. ✅
 - **[`actions.md`](actions.md)** — `Action` enum, `apply_action`,
   `valid_actions_mask`, `disable_sumo_lane_change`. ✅
-- **`rewards.md`** — Reward composer with config. ⏳ Task #9.
+- **[`rewards.md`](rewards.md)** — `RewardConfig`, `RewardState`,
+  `compute_reward` (returns scalar + per-component dict). ✅
 - **`highway_env.md`** — `LaneIQEnv(gymnasium.Env)`. ⏳ Task #10.
 - **`spawning.md`** — Ego respawn logic (with `highway_env.py`). ⏳ Task #10.
 - **`multi_agent_env.md`** — `LaneIQParallelEnv`. ⏳ Week 5.
@@ -53,11 +54,17 @@ from laneiq.env.actions import (
     disable_sumo_lane_change,
     apply_action, valid_actions_mask, mask_invalid_q_values,
 )
+
+# Reward composition
+from laneiq.env.rewards import (
+    RewardConfig, DEFAULT_REWARD_CONFIG, RewardState,
+    COMPONENT_KEYS, compute_reward, reward_state_at_rest,
+)
 ```
 
 Full schemas and examples in the per-file docs:
 [`sumo_runtime.md`](sumo_runtime.md), [`observations.md`](observations.md),
-[`actions.md`](actions.md).
+[`actions.md`](actions.md), [`rewards.md`](rewards.md).
 
 ## Folder-wide invariants
 
@@ -74,5 +81,5 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-04 · `b4d7fd1` (actions.py landed); prior `0477f0d`
-(observations.py); `1f423f2` (sumo_runtime.py); doc split at `d9d8601`
+2026-05-05 · pending commit (rewards.py landed); prior `b4d7fd1` (actions);
+`0477f0d` (observations); `1f423f2` (sumo_runtime); doc split at `d9d8601`
