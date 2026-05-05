@@ -10,10 +10,10 @@ in the environment* lives in `laneiq/agents/`.
 
 ## Status
 
-🚧 **All inner pieces laid; only `LaneIQEnv` left to stitch them together.**
-`sumo_runtime.py`, `observations.py`, `actions.py`, and `rewards.py` are
-in and tested. Next file due in Week 2: `highway_env.py` (Task #10). The
-PettingZoo wrapper lands in Week 5.
+✅ **Single-agent env complete.** All five files (`sumo_runtime`,
+`observations`, `actions`, `rewards`, `highway_env`) are in and tested.
+`LaneIQEnv` passes `gymnasium.utils.env_checker.check_env`. The PettingZoo
+multi-agent wrapper lands in Week 5.
 
 ## Files in this folder
 
@@ -27,8 +27,8 @@ Per-file docs live alongside this OVERVIEW.md:
   `valid_actions_mask`, `disable_sumo_lane_change`. ✅
 - **[`rewards.md`](rewards.md)** — `RewardConfig`, `RewardState`,
   `compute_reward` (returns scalar + per-component dict). ✅
-- **`highway_env.md`** — `LaneIQEnv(gymnasium.Env)`. ⏳ Task #10.
-- **`spawning.md`** — Ego respawn logic (with `highway_env.py`). ⏳ Task #10.
+- **[`highway_env.md`](highway_env.md)** — `LaneIQEnv(gymnasium.Env)` —
+  the integrated env. Passes `env_checker`. ✅
 - **`multi_agent_env.md`** — `LaneIQParallelEnv`. ⏳ Week 5.
 
 ## Public API (today)
@@ -60,11 +60,15 @@ from laneiq.env.rewards import (
     RewardConfig, DEFAULT_REWARD_CONFIG, RewardState,
     COMPONENT_KEYS, compute_reward, reward_state_at_rest,
 )
+
+# The integrated env
+from laneiq.env.highway_env import LaneIQEnv
 ```
 
 Full schemas and examples in the per-file docs:
 [`sumo_runtime.md`](sumo_runtime.md), [`observations.md`](observations.md),
-[`actions.md`](actions.md), [`rewards.md`](rewards.md).
+[`actions.md`](actions.md), [`rewards.md`](rewards.md),
+[`highway_env.md`](highway_env.md).
 
 ## Folder-wide invariants
 
@@ -81,5 +85,6 @@ Full schemas and examples in the per-file docs:
 
 ## Last updated
 
-2026-05-05 · `ee53ff5` (rewards.py landed); prior `b4d7fd1` (actions);
-`0477f0d` (observations); `1f423f2` (sumo_runtime); doc split at `d9d8601`
+2026-05-05 · pending commit (highway_env.py landed; env_checker passes);
+prior `ee53ff5` (rewards); `b4d7fd1` (actions); `0477f0d` (observations);
+`1f423f2` (sumo_runtime); doc split at `d9d8601`
