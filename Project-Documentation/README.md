@@ -87,7 +87,11 @@ ordering; reference each one by number from per-file docs.
 | [`laneiq/env/rewards.md`](laneiq/env/rewards.md) | ✅ `RewardConfig` + `compute_reward` (scalar + per-component dict) | `ee53ff5` |
 | [`laneiq/env/highway_env.md`](laneiq/env/highway_env.md) | ✅ `LaneIQEnv(gymnasium.Env)` — passes `env_checker` | `7c6a6e9` |
 | `laneiq/agents/dqn/` | ⏳ Tasks #12–13 |  — |
-| `laneiq/agents/baselines/` | ⏳ Task #11 |  — |
+| [`laneiq/agents/OVERVIEW.md`](laneiq/agents/OVERVIEW.md) | ✅ Policy protocol + agents folder summary | pending |
+| [`laneiq/agents/baselines/OVERVIEW.md`](laneiq/agents/baselines/OVERVIEW.md) | ✅ Three rule-based baselines summary | pending |
+| [`laneiq/agents/baselines/random_agent.md`](laneiq/agents/baselines/random_agent.md) | ✅ Uniform random over valid actions | pending |
+| [`laneiq/agents/baselines/greedy_agent.md`](laneiq/agents/baselines/greedy_agent.md) | ✅ Highest-projected-speed policy | pending |
+| [`laneiq/agents/baselines/safe_rule_agent.md`](laneiq/agents/baselines/safe_rule_agent.md) | ✅ Clear-and-faster policy | pending |
 | `laneiq/eval/` | ⏳ Week 3 |  — |
 | `laneiq/multi_agent/` | ⏳ Week 5 |  — |
 
