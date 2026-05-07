@@ -80,4 +80,4 @@ Per call:
 
 ## Last updated
 
-2026-05-07 · pending commit (initial implementation)
+2026-05-07 · `e4f5fa6` (initial implementation)

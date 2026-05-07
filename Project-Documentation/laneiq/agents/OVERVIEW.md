@@ -95,4 +95,4 @@ from laneiq.agents.baselines.safe_rule_agent import SafeRuleAgent
 
 ## Last updated
 
-2026-05-07 · pending commit (baselines + Policy protocol; DQN pending Task #12)
+2026-05-07 · `e4f5fa6` (baselines + Policy protocol; DQN pending Task #12)
