@@ -43,6 +43,11 @@ the original PRD is at [`Lane-Optimize-PRD.pdf`](Lane-Optimize-PRD.pdf).
 
 ## 🚦 The Project-Documentation gate (HARD RULE)
 
+> **Note for fresh clones / contributors:** `Project-Documentation/` is
+> intentionally **gitignored** — it lives only on the original author's
+> machine. If the folder doesn't exist in your working tree, the gate
+> below does not apply; recruiter-facing polish lives in `docs/` instead.
+
 `Project-Documentation/` mirrors the code structure (`Project-Documentation/laneiq/env/`
 ↔ `laneiq/env/`, etc.) and holds working docs that **must stay in sync with the
 code at all times**. It is separate from `docs/` (which is recruiter-facing).

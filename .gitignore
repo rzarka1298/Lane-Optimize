@@ -46,3 +46,7 @@ backend/.env
 sumo_scenarios/**/tripinfo*.xml
 sumo_scenarios/**/sumo.log
 sumo_scenarios/**/*.fcd.xml
+
+# Working docs (internal). Lives only on local machine — recruiter-facing
+# docs go in `docs/` (linked from README), not in here.
+Project-Documentation/
