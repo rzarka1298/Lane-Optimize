@@ -29,19 +29,19 @@ def profile_env_steps(*, density: str, n_steps: int, seed: int = 0) -> tuple[flo
     """Return (steps_per_sec, sim_seconds_simulated_per_wall_second)."""
     env = LaneIQEnv(density=density, max_steps=n_steps + 100, warmup_steps=30, seed=seed)
     try:
-        obs, _ = env.reset()
+        env.reset()
         agent_action = 0  # STAY — pure env throughput, no policy cost
         # Warm a bit before timing.
         for _ in range(50):
             _, _, term, trunc, _ = env.step(agent_action)
             if term or trunc:
-                obs, _ = env.reset()
+                env.reset()
 
         t0 = time.monotonic()
         for _ in range(n_steps):
             _, _, term, trunc, _ = env.step(agent_action)
             if term or trunc:
-                obs, _ = env.reset()
+                env.reset()
         elapsed = time.monotonic() - t0
     finally:
         env.close()
@@ -105,7 +105,7 @@ def main() -> None:
         env_results[density] = (rate, sim_ratio)
         print(
             f"  density={density:<6}  {rate:7.1f} env-steps/sec  "
-            f"({sim_ratio:.2f}× real-time, {n} steps)",
+            f"({sim_ratio:.2f}x real-time, {n} steps)",
         )
 
     # 2. Gradient step rate on each available device.
@@ -144,7 +144,7 @@ def main() -> None:
         if env_rate < grad_throughput_in_env_units:
             ratio = grad_throughput_in_env_units / env_rate
             verdict = (
-                f"ENV BOTTLENECK ({ratio:.1f}× too slow for GPU; "
+                f"ENV BOTTLENECK ({ratio:.1f}x too slow for GPU; "
                 "libsumo could help)"
             )
         else:
