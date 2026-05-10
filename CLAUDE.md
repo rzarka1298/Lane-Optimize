@@ -7,11 +7,11 @@ This file is auto-loaded into Claude's context on every session in this repo.
 
 ## Project in one paragraph
 
-LaneIQ is a portfolio-grade RL system: a Gymnasium-wrapped SUMO highway simulator
-+ a from-scratch PyTorch DQN + a Stable-Baselines3 PPO + parameter-sharing multi-agent
-PPO, with rule-based baselines, a reproducible eval matrix, and a live FastAPI/React
-dashboard. It is being built in 8 weeks (~20 hrs/week) by a CS student targeting
-big-tech ML and SWE internships. The complete plan lives at
+LaneIQ is an end-to-end RL system: a Gymnasium-wrapped SUMO highway simulator
++ a from-scratch PyTorch DQN + a Stable-Baselines3 PPO + parameter-sharing
+multi-agent PPO, with rule-based baselines, a reproducible eval matrix, and a
+live FastAPI/React dashboard. Built in vertical slices over 8 weeks
+(~20 hrs/week). The complete plan lives at
 [`~/.claude/plans/i-have-attached-a-humble-balloon.md`](~/.claude/plans/i-have-attached-a-humble-balloon.md);
 the original PRD is at [`Lane-Optimize-PRD.pdf`](Lane-Optimize-PRD.pdf).
 
@@ -46,11 +46,11 @@ the original PRD is at [`Lane-Optimize-PRD.pdf`](Lane-Optimize-PRD.pdf).
 > **Note for fresh clones / contributors:** `Project-Documentation/` is
 > intentionally **gitignored** — it lives only on the original author's
 > machine. If the folder doesn't exist in your working tree, the gate
-> below does not apply; recruiter-facing polish lives in `docs/` instead.
+> below does not apply; polished public-facing docs live in `docs/` instead.
 
 `Project-Documentation/` mirrors the code structure (`Project-Documentation/laneiq/env/`
 ↔ `laneiq/env/`, etc.) and holds working docs that **must stay in sync with the
-code at all times**. It is separate from `docs/` (which is recruiter-facing).
+code at all times**. It is separate from `docs/` (which is public-facing).
 
 **Before** editing or creating code in any folder, you **must**:
 
@@ -151,6 +151,6 @@ plus a leaner per-file doc.
 | `configs/` | OmegaConf YAMLs (env / reward / agent variants) |
 | `scripts/` | Top-level CLI entrypoints (`train_dqn.py`, etc.) |
 | `tests/` | Pytest suite |
-| `docs/` | **Recruiter-facing.** Polished architecture / results / RL-design write-ups. Linked from README. |
+| `docs/` | **Public-facing.** Polished architecture / results / RL-design write-ups. Linked from README. |
 | `Project-Documentation/` | **Working docs.** Read before editing; update after. |
 | `Lane-Optimize-PRD.pdf` | Original product requirements |

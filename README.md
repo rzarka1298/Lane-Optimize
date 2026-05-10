@@ -2,7 +2,7 @@
 
 Reinforcement learning for real-time highway lane optimization in [SUMO](https://eclipse.dev/sumo/).
 
-> 🚧 **Work in progress.** Targeting an 8-week build to a polished, recruiter-readable portfolio piece.
+> 🚧 **Work in progress.** Built in vertical slices over 8 weeks; every week ends with something demoable end-to-end.
 
 ## What this is
 
