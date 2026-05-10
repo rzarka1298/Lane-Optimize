@@ -183,8 +183,10 @@ class LaneIQEnv(gym.Env):
         for _ in range(self._warmup_steps):
             traci.simulationStep()
 
-        # Spawn the ego. `depart="now"` schedules immediate insertion;
-        # the next simulationStep() makes it appear in getIDList.
+        # Spawn the ego. `depart="now"` schedules immediate insertion,
+        # but at high density the requested (lane, speed) slot may be
+        # occupied — SUMO defers insertion silently in that case. Loop a
+        # few sim steps until the ego actually appears in getIDList.
         traci.vehicle.add(
             vehID=_EGO_ID,
             routeID=_ROUTE_ID,
@@ -194,7 +196,18 @@ class LaneIQEnv(gym.Env):
             departSpeed=str(self._ego_depart_speed),
             departPos="0.0",
         )
-        traci.simulationStep()
+        max_insertion_wait = 50  # 5 sim seconds at 0.1s step
+        inserted = False
+        for _ in range(max_insertion_wait):
+            traci.simulationStep()
+            if _EGO_ID in traci.vehicle.getIDList():
+                inserted = True
+                break
+        if not inserted:
+            raise RuntimeError(
+                f"ego {_EGO_ID!r} failed to insert within "
+                f"{max_insertion_wait} sim steps at density={self._density!r}",
+            )
 
         # The ego is now in the vehicle list; disable its internal LC
         # override so the policy is the sole decider.
