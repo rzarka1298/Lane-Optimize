@@ -25,10 +25,17 @@ from pathlib import Path
 # Set MPS fallback before torch import is touched anywhere.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
+import gymnasium as gym
+
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train DQN on LaneIQEnv.")
-    p.add_argument("--density", default="medium", choices=("low", "medium", "high"))
+    p.add_argument(
+        "--density", default="medium",
+        choices=("low", "medium", "high", "mixed"),
+        help="'mixed' samples low/medium/high uniformly per episode for "
+             "robustness across all densities.",
+    )
     p.add_argument("--total-steps", type=int, default=100_000)
     p.add_argument("--max-steps", type=int, default=1000, help="env max_steps per episode")
     p.add_argument("--warmup-steps", type=int, default=50, help="env warmup before ego enters")
@@ -56,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     from laneiq.agents.dqn.dqn_agent import DEFAULT_DQN_CONFIG, DQNAgent
     from laneiq.agents.dqn.train import train
     from laneiq.env.highway_env import LaneIQEnv
+    from laneiq.env.mixed_density_env import MixedDensityEnv
     from laneiq.env.observations import OBS_DIM
 
     # Build the config: defaults + any CLI overrides.
@@ -90,12 +98,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  target_update    = every {cfg.target_update_freq:,} steps")
     print("-" * 70)
 
-    env = LaneIQEnv(
-        density=args.density,
-        max_steps=args.max_steps,
-        warmup_steps=args.warmup_steps,
-        seed=args.seed,
-    )
+    if args.density == "mixed":
+        env: gym.Env = MixedDensityEnv(
+            density_pool=("low", "medium", "high"),
+            density_seed=args.seed,
+            max_steps=args.max_steps,
+            warmup_steps=args.warmup_steps,
+            seed=args.seed,
+        )
+    else:
+        env = LaneIQEnv(
+            density=args.density,
+            max_steps=args.max_steps,
+            warmup_steps=args.warmup_steps,
+            seed=args.seed,
+        )
     agent = DQNAgent(
         obs_dim=OBS_DIM,
         n_actions=3,
