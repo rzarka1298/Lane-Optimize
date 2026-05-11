@@ -50,7 +50,12 @@ def _parse_int_csv(value: str) -> list[int]:
     return [int(v.strip()) for v in value.split(",") if v.strip()]
 
 
-def build_agent(name: str, *, dqn_checkpoint: Path | None = None) -> Policy:
+def build_agent(
+    name: str,
+    *,
+    dqn_checkpoint: Path | None = None,
+    ppo_checkpoint: Path | None = None,
+) -> Policy:
     """Construct an agent by name. Raises if unknown."""
     if name == "dqn":
         if dqn_checkpoint is None:
@@ -62,10 +67,17 @@ def build_agent(name: str, *, dqn_checkpoint: Path | None = None) -> Policy:
         agent = DQNAgent(obs_dim=OBS_DIM, n_actions=3, device="cpu", seed=0)
         agent.load(dqn_checkpoint)
         return agent
+    if name == "ppo":
+        if ppo_checkpoint is None:
+            raise ValueError("--ppo-checkpoint required for agent 'ppo'")
+        from laneiq.agents.ppo_sb3 import PPOAgent
+
+        return PPOAgent.from_checkpoint(ppo_checkpoint, device="cpu")
     if name in _AGENT_FACTORIES:
         return _AGENT_FACTORIES[name]()
     raise ValueError(
-        f"unknown agent {name!r}; valid: {[*sorted(_AGENT_FACTORIES), 'dqn']}",
+        f"unknown agent {name!r}; valid: "
+        f"{[*sorted(_AGENT_FACTORIES), 'dqn', 'ppo']}",
     )
 
 
@@ -105,13 +117,18 @@ def run_matrix(
     max_steps: int = 1000,
     warmup_steps: int = 50,
     dqn_checkpoint: Path | None = None,
+    ppo_checkpoint: Path | None = None,
 ) -> tuple[list[AggregatedMetrics], list[EpisodeMetrics]]:
     """Run the full matrix. Returns (aggregated rows, raw per-episode rows)."""
     aggregated: list[AggregatedMetrics] = []
     per_episode: list[EpisodeMetrics] = []
 
     for agent_name in agents:
-        agent = build_agent(agent_name, dqn_checkpoint=dqn_checkpoint)
+        agent = build_agent(
+            agent_name,
+            dqn_checkpoint=dqn_checkpoint,
+            ppo_checkpoint=ppo_checkpoint,
+        )
         for density in densities:
             t0 = time.monotonic()
             episodes = run_episodes(
@@ -173,6 +190,10 @@ def main(argv: list[str] | None = None) -> int:
         help="path to a DQN checkpoint .pt file (required if 'dqn' in --agents)",
     )
     parser.add_argument(
+        "--ppo-checkpoint", type=Path, default=None,
+        help="path to a PPO checkpoint .zip file (required if 'ppo' in --agents)",
+    )
+    parser.add_argument(
         "--out", type=Path, default=Path("results/single_agent_table.csv"),
         help="output CSV path for aggregated results",
     )
@@ -197,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         max_steps=args.max_steps,
         warmup_steps=args.warmup_steps,
         dqn_checkpoint=args.dqn_checkpoint,
+        ppo_checkpoint=args.ppo_checkpoint,
     )
 
     write_aggregated_csv(aggregated, args.out)
