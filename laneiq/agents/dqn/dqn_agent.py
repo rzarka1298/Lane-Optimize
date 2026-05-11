@@ -67,6 +67,16 @@ class DQNConfig:
     # Double DQN trick
     use_double_dqn: bool = True
 
+    # Loss function. Huber (smooth_l1) is linear-for-large-errors so it
+    # tolerates sparse high-magnitude rewards (LaneIQ: -50 collision term)
+    # without exploding gradients. MSE is the textbook choice when rewards
+    # are bounded continuous with no outliers (CartPole: +1/step). Default
+    # True (Huber) because LaneIQ is our actual problem; the CartPole gate
+    # opts out explicitly. Verified Task #17 (2026-05-11): on CartPole-v1,
+    # Huber gets mean100 ~155; MSE gets ~268. On LaneIQ-100k, MSE gets
+    # mean_q to 360 (overestimate) with chronic grad-norm 1000+ vs clip 10.
+    huber_loss: bool = True
+
 
 DEFAULT_DQN_CONFIG: DQNConfig = DQNConfig()
 
@@ -287,8 +297,11 @@ class DQNAgent:
                 next_q = self.target_net(next_obs).max(dim=1).values
             target = rewards + (1.0 - dones) * self._cfg.gamma * next_q
 
-        # MSE Bellman loss.
-        loss = nn.functional.mse_loss(q_taken, target)
+        # See DQNConfig.huber_loss for the rationale on the choice.
+        if self._cfg.huber_loss:
+            loss = nn.functional.smooth_l1_loss(q_taken, target)
+        else:
+            loss = nn.functional.mse_loss(q_taken, target)
 
         self.optimizer.zero_grad()
         loss.backward()

@@ -47,6 +47,10 @@ def test_dqn_solves_cartpole_v1() -> None:
         eps_end=0.05,
         eps_decay_steps=10_000,
         use_double_dqn=True,
+        # CartPole has no reward outliers (just +1/step); MSE converges
+        # faster than Huber here. The LaneIQ defaults use Huber because
+        # of the -50 collision term. See DQNConfig.huber_loss + Task #17.
+        huber_loss=False,
     )
 
     obs_dim = env.observation_space.shape[0]
