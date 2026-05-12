@@ -23,7 +23,7 @@ from pathlib import Path
 # Set MPS fallback before torch import is touched anywhere.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
-import gymnasium as gym  # noqa: E402
+import gymnasium as gym
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -65,7 +65,6 @@ def main(argv: list[str] | None = None) -> int:
     # Build the config from defaults + overrides.
     cfg_overrides: dict = {}
     for key in ("lr", "n_steps", "batch_size", "n_epochs", "clip_range", "ent_coef"):
-        cli_key = key.replace("_", "-")
         val = getattr(args, key)
         if val is not None:
             cfg_overrides[key] = val

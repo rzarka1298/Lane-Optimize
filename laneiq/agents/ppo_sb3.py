@@ -25,7 +25,6 @@ import torch
 from sb3_contrib import MaskablePPO
 
 from laneiq.env.actions import valid_actions_mask
-from laneiq.env.observations import OBS_DIM
 
 
 @dataclass(frozen=True)
@@ -71,7 +70,7 @@ class PPOAgent:
 
     def __init__(
         self,
-        env=None,                                            # noqa: ANN001 — gym.Env or vec env
+        env=None,
         *,
         config: PPOConfig = DEFAULT_PPO_CONFIG,
         device: str | torch.device = "cpu",
@@ -127,7 +126,7 @@ class PPOAgent:
     # Policy protocol — eval-time
     # ------------------------------------------------------------------
 
-    def reset(self, *, seed: int | None = None) -> None:  # noqa: ARG002
+    def reset(self, *, seed: int | None = None) -> None:
         """No-op — SB3 PPO is stateless across episodes."""
         return
 
@@ -178,7 +177,7 @@ class PPOAgent:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.model.save(path)
 
-    def load(self, path: str | Path, env=None) -> None:  # noqa: ANN001
+    def load(self, path: str | Path, env=None) -> None:
         """Load weights from a checkpoint produced by `save()`."""
         self.model = MaskablePPO.load(path, env=env, device=self.model.device)
 
@@ -188,8 +187,8 @@ class PPOAgent:
         path: str | Path,
         *,
         device: str | torch.device = "cpu",
-        env=None,                                            # noqa: ANN001
-    ) -> "PPOAgent":
+        env=None,
+    ) -> PPOAgent:
         """Eval-only constructor: build agent from a saved checkpoint.
 
         No env required for the act() path because MaskablePPO stores the
