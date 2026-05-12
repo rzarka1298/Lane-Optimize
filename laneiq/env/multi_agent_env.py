@@ -104,6 +104,9 @@ class LaneIQParallelEnv(ParallelEnv):
         "name": "laneiq_parallel_v0",
         "render_modes": [],
     }
+    # supersuit looks at par_env.unwrapped.render_mode; must be set even when
+    # no rendering is supported.
+    render_mode: str | None = None
 
     def __init__(
         self,
@@ -231,10 +234,13 @@ class LaneIQParallelEnv(ParallelEnv):
                 departPos=str(self._depart_positions_m[i]),
             )
 
-        # Wait for all egos to actually appear in the vehicle list. At
-        # high density a slot may be momentarily full; loop until insertion
-        # or fail with a clear error.
-        max_insertion_wait = 80
+        # Wait for all egos to actually appear in the vehicle list. With N
+        # egos inserting at distinct (lane, pos, speed) tuples at once, the
+        # later positions can take longer — background flows may occupy
+        # exactly the slot we requested. 200 sim steps = 20 sim-seconds
+        # is generous; if any ego still hasn't inserted by then, the
+        # depart config probably needs adjusting.
+        max_insertion_wait = 200
         for _ in range(max_insertion_wait):
             traci.simulationStep()
             in_list = set(traci.vehicle.getIDList())
@@ -247,7 +253,9 @@ class LaneIQParallelEnv(ParallelEnv):
             ]
             raise RuntimeError(
                 f"egos {missing!r} failed to insert within "
-                f"{max_insertion_wait} sim steps at density={self._density!r}",
+                f"{max_insertion_wait} sim steps at density={self._density!r}; "
+                f"try increasing the spread of `depart_positions_m` or lowering "
+                f"`depart_speed_mps`",
             )
 
         # Disable internal LC override for every ego.
