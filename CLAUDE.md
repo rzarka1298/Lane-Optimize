@@ -15,6 +15,18 @@ live FastAPI/React dashboard. Built in vertical slices over 8 weeks
 [`~/.claude/plans/i-have-attached-a-humble-balloon.md`](~/.claude/plans/i-have-attached-a-humble-balloon.md);
 the original PRD is at [`Lane-Optimize-PRD.pdf`](Lane-Optimize-PRD.pdf).
 
+## 📍 Read this next (session handoff)
+
+Before doing anything else, read these four handoff docs in order — they
+give you the current state of the project in 5 minutes:
+
+1. [`Project-Documentation/STATUS.md`](Project-Documentation/STATUS.md) — current week, what's done, canonical artifacts, what to do first
+2. [`Project-Documentation/RESULTS.md`](Project-Documentation/RESULTS.md) — measured numbers + interview-grade narrative
+3. [`Project-Documentation/LESSONS.md`](Project-Documentation/LESSONS.md) — tribal knowledge from prior sessions; bugs and the fixes that stuck
+4. [`Project-Documentation/NEXT-STEPS.md`](Project-Documentation/NEXT-STEPS.md) — Week 6-8 plan + open hypotheses
+
+Then continue with the workflow below.
+
 ## Locked-in technical decisions (do not relitigate without asking)
 
 - **Simulator:** SUMO via `traci` everywhere (training + live demo). `libsumo` is intentionally
