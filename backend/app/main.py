@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.routes import runs, sim, stream
+from backend.app.routes import replays, runs, sim, stream
 from backend.app.services.simulator import SIM_SERVICE
 
 logging.basicConfig(
@@ -65,6 +65,7 @@ app.add_middleware(
 app.include_router(sim.router)
 app.include_router(stream.router)
 app.include_router(runs.router)
+app.include_router(replays.router)
 
 
 @app.get("/healthz", tags=["health"])

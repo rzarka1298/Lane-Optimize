@@ -22,11 +22,13 @@ demo with one viewer, this is fine.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 import traci
@@ -46,14 +48,16 @@ _TICK_INTERVAL_S = 1.0 / _TICK_RATE_HZ
 
 @dataclass
 class _ActiveRun:
-    """Bookkeeping for the currently-running sim."""
+    """Bookkeeping for the currently-running sim. `env` and `agent` are
+    None for replay-mode runs (which stream pre-recorded ticks)."""
 
     run_id: str
-    agent: Policy
     agent_name: str
     density: DensityT
     seed: int | None
-    env: LaneIQEnv
+    env: LaneIQEnv | None
+    agent: Policy | None = None
+    is_replay: bool = False
     task: asyncio.Task | None = None
     subscribers: set[asyncio.Queue] = field(default_factory=set)
     step: int = 0
@@ -108,6 +112,33 @@ class SimulatorService:
                       run_id, agent_name, density, seed)
             return run_id
 
+    async def start_replay(self, *, replay_path: Path, name: str) -> str:
+        """Start a replay-mode run that streams pre-recorded ticks at 10 Hz.
+
+        Reads the JSON produced by `scripts/record_replay.py`. No SUMO is
+        started — the simulator just yields the ticks back over WS at the
+        same cadence the live loop would.
+        """
+        async with self._lock:
+            if self.is_running:
+                raise RuntimeError(
+                    f"a sim is already running (run_id={self._active.run_id})",
+                )
+            payload = json.loads(replay_path.read_text())
+            ticks_raw = payload["ticks"]
+            run_id = uuid.uuid4().hex[:8]
+            run = _ActiveRun(
+                run_id=run_id, agent_name=name,
+                density=payload.get("density", "medium"),
+                seed=payload.get("seed"),
+                env=None, agent=None, is_replay=True,
+            )
+            run.task = asyncio.create_task(self._replay_loop(run, ticks_raw))
+            self._active = run
+            _log.info("replay started run_id=%s name=%s n_ticks=%d",
+                      run_id, name, len(ticks_raw))
+            return run_id
+
     async def stop(self) -> None:
         """Stop the running sim. No-op if nothing's running."""
         async with self._lock:
@@ -118,10 +149,11 @@ class SimulatorService:
                 run.task.cancel()
                 with suppress(asyncio.CancelledError):
                     await run.task
-            try:
-                run.env.close()
-            except Exception:
-                _log.exception("error closing env on stop")
+            if run.env is not None:
+                try:
+                    run.env.close()
+                except Exception:
+                    _log.exception("error closing env on stop")
             # Notify subscribers + clear them.
             for q in list(run.subscribers):
                 await q.put(StreamFrame(type="stopped", message="sim stopped"))
@@ -144,6 +176,7 @@ class SimulatorService:
             "seed": self._active.seed,
             "step": self._active.step,
             "sim_time_s": self._active.sim_time_s,
+            "is_replay": self._active.is_replay,
         }
 
     # ------------------------------------------------------------------
@@ -167,8 +200,35 @@ class SimulatorService:
     # Loop body
     # ------------------------------------------------------------------
 
+    async def _replay_loop(self, run: _ActiveRun, ticks: list[dict]) -> None:
+        """Stream pre-recorded ticks at the live tick rate."""
+        try:
+            for q in list(run.subscribers):
+                await q.put(StreamFrame(
+                    type="started",
+                    message=f"replay={run.agent_name}",
+                ))
+            for tick_dict in ticks:
+                t_loop_start = time.monotonic()
+                tick = SimTick(**tick_dict)
+                run.step = tick.step
+                run.sim_time_s = tick.t
+                self._broadcast(run, StreamFrame(type="tick", tick=tick))
+                elapsed = time.monotonic() - t_loop_start
+                if elapsed < _TICK_INTERVAL_S:
+                    await asyncio.sleep(_TICK_INTERVAL_S - elapsed)
+            for q in list(run.subscribers):
+                await q.put(StreamFrame(type="stopped", message="replay ended"))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _log.exception("replay loop crashed")
+            for q in list(run.subscribers):
+                await q.put(StreamFrame(type="error", message=str(exc)))
+
     async def _run_loop(self, run: _ActiveRun) -> None:
         """The hot loop. Stepped once per ~100 ms."""
+        assert run.env is not None and run.agent is not None
         try:
             obs, _info = run.env.reset(seed=run.seed)
 
@@ -231,52 +291,20 @@ class SimulatorService:
         terminated: bool,
         truncated: bool,
     ) -> SimTick:
-        """Pull current vehicle list from TraCI and pack into a SimTick."""
-        vehicles: list[Vehicle] = []
-        try:
-            veh_ids = traci.vehicle.getIDList()
-        except Exception:
-            veh_ids = ()
-
-        for vid in veh_ids:
-            try:
-                x = float(traci.vehicle.getLanePosition(vid))
-                lane = int(traci.vehicle.getLaneIndex(vid))
-                lat = float(traci.vehicle.getLateralLanePosition(vid))
-                # Lane y = lane center; one lane is ~3.2 m wide.
-                y = lane * 3.2 + lat
-                speed = float(traci.vehicle.getSpeed(vid))
-                vtype_raw = traci.vehicle.getTypeID(vid)
-                vtype = vtype_raw if vtype_raw in ("aggressive", "normal", "slow", "ego") else "normal"
-                vehicles.append(Vehicle(
-                    id=vid, x=x, y=y, speed=speed, lane=max(0, min(2, lane)),
-                    is_ego=(vid == _EGO_ID), vtype=vtype,  # type: ignore[arg-type]
-                ))
-            except Exception:
-                continue
-
-        action_name = ("stay", "change_left", "change_right")[int(action)]
-        explanation = self._explain(action, obs, mask)
-
-        return SimTick(
-            t=run.sim_time_s,
+        return build_tick(
             step=run.step,
-            ego_id=_EGO_ID,
-            vehicles=vehicles,
-            decision=Decision(action=action_name, explanation=explanation),  # type: ignore[arg-type]
+            sim_time_s=run.sim_time_s,
+            action=action,
+            mask=mask,
+            obs=obs,
+            info=info,
             terminated=terminated,
             truncated=truncated,
-            info={k: float(v) for k, v in info.get("reward_components", {}).items()},
         )
 
-    def _explain(self, action: int, obs, mask) -> str:
-        """Single-sentence human-readable explanation of the action."""
-        a = Action(int(action))
-        if a == Action.STAY:
-            return "Holding lane — current lane is acceptable."
-        if a == Action.CHANGE_LEFT:
-            return "Changing left — opportunity in adjacent lane."
-        return "Changing right — slower traffic ahead or rebalancing."
+    @staticmethod
+    def _explain(action: int, obs, mask) -> str:
+        return explain(action)
 
     def _broadcast(self, run: _ActiveRun, frame: StreamFrame) -> None:
         """Push a frame to every subscriber; drop oldest if queue is full."""
@@ -291,6 +319,77 @@ class SimulatorService:
                     q.put_nowait(frame)
                 except (asyncio.QueueEmpty, asyncio.QueueFull):
                     pass  # give up; queue will catch up
+
+
+# --------------------------------------------------------------------
+# Module-level helpers (reused by scripts/record_replay.py so recorded
+# JSON is byte-identical to live-stream payloads).
+# --------------------------------------------------------------------
+
+
+def build_tick(
+    *,
+    step: int,
+    sim_time_s: float,
+    action: int,
+    mask,
+    obs,
+    info: dict,
+    terminated: bool,
+    truncated: bool,
+) -> SimTick:
+    """Snapshot the current TraCI vehicle list into a SimTick wire payload.
+
+    Caller must hold an active TraCI connection (e.g., inside
+    LaneIQEnv's lifetime). `mask` is unused today but kept in the
+    signature for future use (e.g., embedding the mask in the tick).
+    """
+    del mask  # reserved for future use
+    vehicles: list[Vehicle] = []
+    try:
+        veh_ids = traci.vehicle.getIDList()
+    except Exception:
+        veh_ids = ()
+
+    for vid in veh_ids:
+        try:
+            x = float(traci.vehicle.getLanePosition(vid))
+            lane = int(traci.vehicle.getLaneIndex(vid))
+            lat = float(traci.vehicle.getLateralLanePosition(vid))
+            # Lane y = lane center; one lane is ~3.2 m wide.
+            y = lane * 3.2 + lat
+            speed = float(traci.vehicle.getSpeed(vid))
+            vtype_raw = traci.vehicle.getTypeID(vid)
+            vtype = vtype_raw if vtype_raw in ("aggressive", "normal", "slow", "ego") else "normal"
+            vehicles.append(Vehicle(
+                id=vid, x=x, y=y, speed=speed, lane=max(0, min(2, lane)),
+                is_ego=(vid == _EGO_ID), vtype=vtype,  # type: ignore[arg-type]
+            ))
+        except Exception:
+            continue
+
+    action_name = ("stay", "change_left", "change_right")[int(action)]
+    return SimTick(
+        t=sim_time_s,
+        step=step,
+        ego_id=_EGO_ID,
+        vehicles=vehicles,
+        decision=Decision(action=action_name, explanation=explain(action)),  # type: ignore[arg-type]
+        terminated=terminated,
+        truncated=truncated,
+        info={k: float(v) for k, v in info.get("reward_components", {}).items()},
+    )
+
+
+def explain(action: int) -> str:
+    """One-sentence English description of an action — same template for
+    live and replay payloads."""
+    a = Action(int(action))
+    if a == Action.STAY:
+        return "Holding lane — current lane is acceptable."
+    if a == Action.CHANGE_LEFT:
+        return "Changing left — opportunity in adjacent lane."
+    return "Changing right — slower traffic ahead or rebalancing."
 
 
 # Module-level singleton.

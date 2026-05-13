@@ -1,6 +1,8 @@
 import type {
+  ReplayListEntry,
   RunListEntry,
   SimStatusResponse,
+  StartReplayRequest,
   StartSimRequest,
   StartSimResponse,
 } from "./types";
@@ -43,9 +45,15 @@ export class ApiError extends Error {
 
 export const api = {
   getRuns: () => request<RunListEntry[]>("/runs"),
+  getReplays: () => request<ReplayListEntry[]>("/replays"),
   getStatus: () => request<SimStatusResponse>("/sim/status"),
   startSim: (body: StartSimRequest) =>
     request<StartSimResponse>("/sim/start", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  startReplay: (body: StartReplayRequest) =>
+    request<StartSimResponse>("/sim/start_replay", {
       method: "POST",
       body: JSON.stringify(body),
     }),

@@ -48,6 +48,7 @@ class SimStatusResponse(BaseModel):
     seed: int | None = None
     step: int = 0
     sim_time_s: float = 0.0
+    is_replay: bool = False
 
 
 class RunListEntry(BaseModel):
@@ -56,6 +57,25 @@ class RunListEntry(BaseModel):
     name: str          # e.g. "ppo_v1_mixed_500k"
     algorithm: str     # "ppo" / "dqn"
     path: str          # absolute path on backend filesystem
+    size_bytes: int
+
+
+class StartReplayRequest(BaseModel):
+    """POST /sim/start_replay body."""
+
+    replay: str = Field(
+        description="replay file stem under results/replays/ (no .json)",
+        examples=["ppo_medium_seed42"],
+    )
+
+
+class ReplayListEntry(BaseModel):
+    """One row of GET /replays — a pre-recorded episode the user can play back."""
+
+    name: str          # file stem, e.g. "ppo_medium_seed42"
+    agent: str         # agent recorded (from the JSON metadata)
+    density: str       # density recorded
+    n_ticks: int       # how long the recording is
     size_bytes: int
 
 

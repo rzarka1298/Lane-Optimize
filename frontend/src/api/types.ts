@@ -69,6 +69,7 @@ export interface SimStatusResponse {
   seed: number | null;
   step: number;
   sim_time_s: number;
+  is_replay: boolean;
 }
 
 export interface RunListEntry {
@@ -76,4 +77,16 @@ export interface RunListEntry {
   algorithm: Algorithm;
   path: string;
   size_bytes: number;
+}
+
+export interface ReplayListEntry {
+  name: string;
+  agent: string;
+  density: string;
+  n_ticks: number;
+  size_bytes: number;
+}
+
+export interface StartReplayRequest {
+  replay: string;
 }

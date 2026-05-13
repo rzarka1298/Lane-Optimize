@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api/client";
 import { useSimStream } from "./api/useSimStream";
-import type { Density, RunListEntry } from "./api/types";
+import type { Density, ReplayListEntry, RunListEntry } from "./api/types";
 import { HighwayCanvas } from "./components/HighwayCanvas";
 import { DecisionTicker } from "./components/DecisionTicker";
 import { MetricsPanel } from "./components/MetricsPanel";
@@ -10,7 +10,9 @@ import { MetricsPanel } from "./components/MetricsPanel";
 // Layout components arrive in the next session; this is deliberately ugly.
 export function App() {
   const [runs, setRuns] = useState<RunListEntry[]>([]);
+  const [replays, setReplays] = useState<ReplayListEntry[]>([]);
   const [agent, setAgent] = useState<string>("");
+  const [replay, setReplay] = useState<string>("");
   const [density, setDensity] = useState<Density>("medium");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +36,19 @@ export function App() {
     }
   }
 
+  async function loadReplays() {
+    try {
+      const rs = await api.getReplays();
+      setReplays(rs);
+      if (rs.length > 0 && rs[0] && !replay) setReplay(rs[0].name);
+    } catch {
+      // Replays endpoint may 404 on older backends; non-fatal.
+    }
+  }
+
   useEffect(() => {
     void loadRuns();
+    void loadReplays();
   }, []);
 
   async function onStart() {
@@ -49,6 +62,21 @@ export function App() {
         // 404 = agent not found. Refetch /runs so the dropdown self-heals
         // if the checkpoint folder changed since page load.
         if (e.status === 404) void loadRuns(agent);
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+      }
+    }
+  }
+
+  async function onStartReplay() {
+    setError(null);
+    try {
+      await api.startReplay({ replay });
+      setStreaming(true);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setError(`replay '${replay}' → ${e.status} ${e.message}`);
       } else {
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
@@ -138,10 +166,37 @@ export function App() {
             disabled={!agent}
             className="rounded bg-emerald-600 px-3 py-1 hover:bg-emerald-500 disabled:opacity-40"
           >
-            Start
+            Start live
           </button>
         )}
       </section>
+
+      {replays.length > 0 && (
+        <section className="flex flex-wrap items-center gap-3 rounded border border-slate-800 p-3">
+          <span className="text-xs uppercase tracking-wider text-slate-500">
+            replay
+          </span>
+          <select
+            className="rounded bg-slate-800 px-2 py-1"
+            value={replay}
+            onChange={(e) => setReplay(e.target.value)}
+            disabled={streaming}
+          >
+            {replays.map((r) => (
+              <option key={r.name} value={r.name}>
+                {r.name} — {r.agent} · {r.density} · {r.n_ticks} ticks
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={onStartReplay}
+            disabled={streaming || !replay}
+            className="rounded bg-cyan-600 px-3 py-1 hover:bg-cyan-500 disabled:opacity-40"
+          >
+            Play replay
+          </button>
+        </section>
+      )}
 
       {error && (
         <div className="rounded border border-red-600 bg-red-950 p-2 text-red-200">
