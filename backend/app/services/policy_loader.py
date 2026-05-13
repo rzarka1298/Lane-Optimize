@@ -101,6 +101,13 @@ def load_checkpoint(name: str) -> Policy:
     algo = _detect_algo(ckpt)
 
     if algo == "ppo":
+        # MAPPO checkpoints are saved by plain SB3 PPO, not MaskablePPO
+        # (see scripts/train_mappo.py: action masks don't propagate through
+        # supersuit). Loading a plain-PPO save with MaskablePPO.load fails
+        # with "Policy must subclass MaskableActorCriticPolicy". Branch
+        # here so mappo_*.zip uses the plain loader.
+        if ckpt.stem.lower().startswith("mappo_"):
+            return _load_mappo_checkpoint(ckpt)
         from laneiq.agents.ppo_sb3 import PPOAgent
         return PPOAgent.from_checkpoint(ckpt, device="cpu")
     if algo == "dqn":
@@ -110,6 +117,41 @@ def load_checkpoint(name: str) -> Policy:
         agent.load(ckpt)
         return agent
     raise ValueError(f"cannot classify checkpoint {ckpt}")
+
+
+class _MAPPOEvalAgent:
+    """Eval-time adapter for parameter-sharing MAPPO checkpoints.
+
+    The training pipeline saved a plain `stable_baselines3.PPO` model
+    (not MaskablePPO). The shared policy was trained on per-agent
+    observations whose shape matches single-agent `LaneIQEnv`, so the
+    same checkpoint drives a single ego in the live demo. Action masks
+    are ignored — same as during training, where supersuit dropped them
+    and `apply_action` silently no-ops invalid lane targets.
+    """
+
+    name: str = "mappo"
+
+    def __init__(self, model: object) -> None:
+        self.model = model
+
+    def reset(self, *, seed: int | None = None) -> None:
+        return
+
+    def act(
+        self,
+        observation,  # type: ignore[no-untyped-def]
+        *,
+        action_mask=None,  # type: ignore[no-untyped-def]
+    ) -> int:
+        del action_mask  # ignored — see class docstring
+        action, _state = self.model.predict(observation, deterministic=True)  # type: ignore[attr-defined]
+        return int(action)
+
+
+def _load_mappo_checkpoint(ckpt: Path) -> Policy:
+    from stable_baselines3 import PPO
+    return _MAPPOEvalAgent(PPO.load(ckpt, device="cpu"))
 
 
 def resolve(name: str) -> Policy:
