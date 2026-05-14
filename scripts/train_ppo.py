@@ -51,6 +51,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-epochs", type=int, default=None)
     p.add_argument("--clip-range", type=float, default=None)
     p.add_argument("--ent-coef", type=float, default=None)
+
+    # Reward-shape overrides (omit any to inherit DEFAULT_REWARD_CONFIG).
+    p.add_argument("--w-speed", type=float, default=None)
+    p.add_argument("--w-collision", type=float, default=None)
+    p.add_argument("--w-unsafe-gap", type=float, default=None)
+    p.add_argument("--w-lane-cost", type=float, default=None)
+    p.add_argument("--w-jerk", type=float, default=None)
+    p.add_argument("--w-alive", type=float, default=None)
     return p
 
 
@@ -61,14 +69,28 @@ def main(argv: list[str] | None = None) -> int:
     from laneiq.agents.ppo_sb3 import DEFAULT_PPO_CONFIG, PPOAgent
     from laneiq.env.highway_env import LaneIQEnv
     from laneiq.env.mixed_density_env import MixedDensityEnv
+    from laneiq.env.rewards import DEFAULT_REWARD_CONFIG
 
-    # Build the config from defaults + overrides.
+    # Build the PPO hyperparam config from defaults + overrides.
     cfg_overrides: dict = {}
     for key in ("lr", "n_steps", "batch_size", "n_epochs", "clip_range", "ent_coef"):
         val = getattr(args, key)
         if val is not None:
             cfg_overrides[key] = val
     cfg = replace(DEFAULT_PPO_CONFIG, **cfg_overrides) if cfg_overrides else DEFAULT_PPO_CONFIG
+
+    # Reward-shape overrides — produce a custom RewardConfig only if the
+    # user touched a flag, otherwise inherit the env's default.
+    reward_overrides: dict = {}
+    for key in ("w_speed", "w_collision", "w_unsafe_gap", "w_lane_cost",
+                "w_jerk", "w_alive"):
+        val = getattr(args, key)
+        if val is not None:
+            reward_overrides[key] = val
+    reward_cfg = (
+        replace(DEFAULT_REWARD_CONFIG, **reward_overrides)
+        if reward_overrides else DEFAULT_REWARD_CONFIG
+    )
 
     print("=" * 70)
     print(f"PPO (MaskablePPO) training on LaneIQEnv ({args.density} density)")
@@ -85,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  clip_range       = {cfg.clip_range}")
     print(f"  ent_coef         = {cfg.ent_coef}")
     print(f"  hidden_dims      = {cfg.hidden_dims}")
+    if reward_overrides:
+        print(f"  reward overrides = {reward_overrides}")
     print("-" * 70)
 
     if args.density == "mixed":
@@ -94,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             warmup_steps=args.warmup_steps,
             seed=args.seed,
+            reward_config=reward_cfg,
         )
     else:
         env = LaneIQEnv(
@@ -101,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             warmup_steps=args.warmup_steps,
             seed=args.seed,
+            reward_config=reward_cfg,
         )
 
     agent = PPOAgent(
