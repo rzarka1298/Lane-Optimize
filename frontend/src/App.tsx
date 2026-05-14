@@ -407,6 +407,25 @@ export function App() {
         />
       </details>
 
+      <details className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
+        <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
+          How it uses lanes — per-replay heatmaps with ego trajectory
+        </summary>
+        <p className="mt-2 text-slate-500">
+          Background = mean vehicles per lane per time bin (darker = more
+          traffic). Gold line = ego&apos;s lane over time. Dots mark lane
+          changes. The red X marks where the episode ended (collision or
+          end-of-road). The conservative ppo_v2 picks the open lane and
+          holds it; ppo_v1&apos;s collision panel shows the lane change
+          that ended the episode.
+        </p>
+        <img
+          src="/lane_efficiency.png"
+          alt="Per-replay lane occupancy heatmaps with ego trajectory overlay"
+          className="mt-2 w-full rounded border border-slate-800"
+        />
+      </details>
+
       <section className="rounded border border-slate-800 p-3 text-xs">
         <h2 className="mb-2 text-slate-400">diagnostics</h2>
         {tick ? (
