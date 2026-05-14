@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api/client";
 import { useSimStream } from "./api/useSimStream";
 import type { Density, ReplayListEntry, RunListEntry } from "./api/types";
@@ -6,17 +6,60 @@ import { HighwayCanvas } from "./components/HighwayCanvas";
 import { DecisionTicker } from "./components/DecisionTicker";
 import { MetricsPanel } from "./components/MetricsPanel";
 
-// Smoke-test app — proves the full plumbing (REST start + WS stream) works.
-// Layout components arrive in the next session; this is deliberately ugly.
+// Recruiter-facing labels for the canonical agents. Kept in the frontend
+// (not in the backend's /runs response) because they're a presentation
+// concern: which trade-off this checkpoint embodies.
+const AGENT_LABELS: Record<string, string> = {
+  ppo_v2_safety_heavy_150k:
+    "PPO conservative — 0% collisions everywhere (canonical)",
+  ppo_v1_mixed_500k:
+    "PPO aggressive — active lane-changer (15% high-density col)",
+  dqn_v3_mixed_200k: "DQN generalist — mixed-density training",
+  dqn_v2_100k_huber: "DQN low-density specialist",
+  mappo_v1_300k: "MAPPO multi-agent — trained vs 3 other egos",
+};
+
+const QUICK_PICKS: { label: string; agent: string; tooltip: string }[] = [
+  {
+    label: "Conservative",
+    agent: "ppo_v2_safety_heavy_150k",
+    tooltip:
+      "Safety-tuned PPO. Stays in lane, 0% collisions across all densities.",
+  },
+  {
+    label: "Aggressive",
+    agent: "ppo_v1_mixed_500k",
+    tooltip:
+      "Default-reward PPO. Active lane-changer; 15% collisions at high density.",
+  },
+  {
+    label: "Multi-agent",
+    agent: "mappo_v1_300k",
+    tooltip:
+      "Parameter-sharing PPO trained against 3 other egos competing for space.",
+  },
+];
+
+function randomSeed(): number {
+  return Math.floor(Math.random() * 1_000_000);
+}
+
 export function App() {
   const [runs, setRuns] = useState<RunListEntry[]>([]);
   const [replays, setReplays] = useState<ReplayListEntry[]>([]);
   const [agent, setAgent] = useState<string>("");
   const [replay, setReplay] = useState<string>("");
   const [density, setDensity] = useState<Density>("medium");
+  const [seed, setSeed] = useState<number>(() => randomSeed());
+  const [loop, setLoop] = useState<boolean>(false);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stream = useSimStream(streaming);
+
+  // Track the last episode's terminal step so the auto-restart effect fires
+  // exactly once per episode-end (lastTick stays "terminated=true" until we
+  // tear down).
+  const lastEndedStep = useRef<number | null>(null);
 
   async function loadRuns(preserve?: string) {
     try {
@@ -26,7 +69,11 @@ export function App() {
       if (stillThere) {
         setAgent(preserve);
       } else if (rs.length > 0 && rs[0]) {
-        setAgent(rs[0].name);
+        // Default to the canonical PPO if it's available, else first entry.
+        const canonical = rs.find(
+          (r) => r.name === "ppo_v2_safety_heavy_150k",
+        );
+        setAgent(canonical?.name ?? rs[0].name);
       } else {
         setAgent("");
       }
@@ -51,22 +98,29 @@ export function App() {
     void loadReplays();
   }, []);
 
-  async function onStart() {
+  async function startWith(seedToUse: number) {
     setError(null);
     try {
-      await api.startSim({ agent, density, seed: 42 });
+      await api.startSim({ agent, density, seed: seedToUse });
       setStreaming(true);
     } catch (e) {
       if (e instanceof ApiError) {
-        setError(`start agent='${agent}' density='${density}' → ${e.status} ${e.message}`);
-        // 404 = agent not found. Refetch /runs so the dropdown self-heals
-        // if the checkpoint folder changed since page load.
+        setError(
+          `start agent='${agent}' density='${density}' seed=${seedToUse} → ${e.status} ${e.message}`,
+        );
         if (e.status === 404) void loadRuns(agent);
       } else {
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
       }
     }
+  }
+
+  async function onStart() {
+    const fresh = randomSeed();
+    setSeed(fresh);
+    lastEndedStep.current = null;
+    await startWith(fresh);
   }
 
   async function onStartReplay() {
@@ -86,6 +140,7 @@ export function App() {
 
   async function onStop() {
     setStreaming(false);
+    lastEndedStep.current = null;
     try {
       await api.stopSim();
     } catch (e) {
@@ -93,6 +148,41 @@ export function App() {
       setError(msg);
     }
   }
+
+  // Auto-restart loop: when an episode ends and loop mode is on, stop +
+  // restart with a fresh seed so the demo feels continuous.
+  useEffect(() => {
+    if (!loop || !streaming) return;
+    const tick = stream.lastTick;
+    if (!tick) return;
+    if (!(tick.terminated || tick.truncated)) return;
+    if (lastEndedStep.current === tick.step) return; // already handled
+    lastEndedStep.current = tick.step;
+
+    let cancelled = false;
+    (async () => {
+      // Brief pause so the viewer registers the end state before the next
+      // episode starts.
+      await new Promise((r) => setTimeout(r, 600));
+      if (cancelled) return;
+      setStreaming(false);
+      try {
+        await api.stopSim();
+      } catch {
+        /* idempotent */
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      if (cancelled) return;
+      const fresh = randomSeed();
+      setSeed(fresh);
+      await startWith(fresh);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.lastTick, loop, streaming]);
 
   const tick = stream.lastTick;
 
@@ -115,6 +205,31 @@ export function App() {
         </span>
       </header>
 
+      <section className="flex flex-wrap items-center gap-2 rounded border border-slate-800 p-3">
+        <span className="text-xs uppercase tracking-wider text-slate-500">
+          quick pick
+        </span>
+        {QUICK_PICKS.map((qp) => {
+          const available = runs.some((r) => r.name === qp.agent);
+          const isActive = agent === qp.agent;
+          return (
+            <button
+              key={qp.agent}
+              onClick={() => setAgent(qp.agent)}
+              disabled={streaming || !available}
+              title={qp.tooltip}
+              className={`rounded px-3 py-1 text-xs transition ${
+                isActive
+                  ? "bg-yellow-500 text-slate-900"
+                  : "bg-slate-700 hover:bg-slate-600"
+              } disabled:opacity-40`}
+            >
+              {qp.label}
+            </button>
+          );
+        })}
+      </section>
+
       <section className="flex flex-wrap items-center gap-3 rounded border border-slate-800 p-3">
         <label className="flex items-center gap-2">
           agent
@@ -126,7 +241,7 @@ export function App() {
           >
             {runs.map((r) => (
               <option key={r.name} value={r.name}>
-                {r.name} ({r.algorithm})
+                {AGENT_LABELS[r.name] ?? `${r.name} (${r.algorithm})`}
               </option>
             ))}
           </select>
@@ -152,6 +267,37 @@ export function App() {
             <option value="medium">medium</option>
             <option value="high">high</option>
           </select>
+        </label>
+        <label className="flex items-center gap-2">
+          seed
+          <input
+            type="number"
+            value={seed}
+            onChange={(e) => setSeed(Number(e.target.value) || 0)}
+            disabled={streaming}
+            className="w-24 rounded bg-slate-800 px-2 py-1 font-mono"
+          />
+          <button
+            type="button"
+            onClick={() => setSeed(randomSeed())}
+            disabled={streaming}
+            title="Re-roll random seed"
+            className="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600 disabled:opacity-40"
+          >
+            🎲
+          </button>
+        </label>
+        <label
+          className="flex items-center gap-2 text-xs"
+          title="When an episode ends, automatically start the next one with a fresh seed"
+        >
+          <input
+            type="checkbox"
+            checked={loop}
+            onChange={(e) => setLoop(e.target.checked)}
+            className="h-3 w-3"
+          />
+          loop episodes
         </label>
         {streaming ? (
           <button
@@ -222,6 +368,22 @@ export function App() {
       />
 
       <MetricsPanel history={stream.history} lastTick={stream.lastTick} />
+
+      <details className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
+        <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
+          How it learned — training curves for the canonical agents
+        </summary>
+        <p className="mt-2 text-slate-500">
+          Each panel shows mean episode return (or value-function explained
+          variance, for MAPPO) over training steps. The dashboard above
+          plays back checkpoints from the end of these runs.
+        </p>
+        <img
+          src="/training_curves.png"
+          alt="LaneIQ training curves for DQN, PPO v1, PPO v2, and MAPPO"
+          className="mt-2 w-full rounded border border-slate-800"
+        />
+      </details>
 
       <section className="rounded border border-slate-800 p-3 text-xs">
         <h2 className="mb-2 text-slate-400">diagnostics</h2>
