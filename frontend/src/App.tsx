@@ -60,6 +60,14 @@ export function App() {
   // exactly once per episode-end (lastTick stays "terminated=true" until we
   // tear down).
   const lastEndedStep = useRef<number | null>(null);
+  // Guards against double-firing the loop restart. Lives in a ref so it
+  // survives re-renders triggered by setStreaming(false) mid-restart.
+  const restartingRef = useRef(false);
+  // Latest values for the loop callback to read without re-binding the
+  // effect. Prevents stale-closure bugs when user changes agent/density
+  // mid-loop.
+  const liveValuesRef = useRef({ agent, density, loop });
+  liveValuesRef.current = { agent, density, loop };
 
   async function loadRuns(preserve?: string) {
     try {
@@ -149,38 +157,52 @@ export function App() {
     }
   }
 
-  // Auto-restart loop: when an episode ends and loop mode is on, stop +
-  // restart with a fresh seed so the demo feels continuous.
-  useEffect(() => {
-    if (!loop || !streaming) return;
-    const tick = stream.lastTick;
-    if (!tick) return;
-    if (!(tick.terminated || tick.truncated)) return;
-    if (lastEndedStep.current === tick.step) return; // already handled
-    lastEndedStep.current = tick.step;
-
-    let cancelled = false;
-    (async () => {
-      // Brief pause so the viewer registers the end state before the next
+  // Fire-and-forget loop restart. NOT wrapped in useEffect cleanup —
+  // re-renders during the restart (caused by setStreaming(false) and the
+  // intermediate setSeed) would otherwise fire the effect's cleanup,
+  // killing the in-flight async before startSim runs. The ref guard
+  // prevents double-fire if multiple terminal ticks arrive back-to-back.
+  async function performLoopRestart(): Promise<void> {
+    if (restartingRef.current) return;
+    restartingRef.current = true;
+    try {
+      // Pause so the viewer registers the end state before the next
       // episode starts.
       await new Promise((r) => setTimeout(r, 600));
-      if (cancelled) return;
+      // User may have toggled loop off during the pause.
+      if (!liveValuesRef.current.loop) return;
+
       setStreaming(false);
       try {
         await api.stopSim();
       } catch {
         /* idempotent */
       }
+      // Brief gap for the backend to fully tear down + the WS hook to
+      // reset its state (history, lastTick) so the next episode starts
+      // with a clean slate.
       await new Promise((r) => setTimeout(r, 200));
-      if (cancelled) return;
+      if (!liveValuesRef.current.loop) return;
+
       const fresh = randomSeed();
       setSeed(fresh);
       await startWith(fresh);
-    })();
+    } finally {
+      restartingRef.current = false;
+    }
+  }
 
-    return () => {
-      cancelled = true;
-    };
+  // Detect episode-end and trigger the loop restart. The effect itself
+  // is intentionally tiny — all the lifecycle work happens in
+  // performLoopRestart, which runs outside the effect.
+  useEffect(() => {
+    if (!loop || !streaming) return;
+    const tick = stream.lastTick;
+    if (!tick) return;
+    if (!(tick.terminated || tick.truncated)) return;
+    if (lastEndedStep.current === tick.step) return;
+    lastEndedStep.current = tick.step;
+    void performLoopRestart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.lastTick, loop, streaming]);
 
