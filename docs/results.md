@@ -150,6 +150,42 @@ Three replays from the canonical set:
 The third panel is the most narratively useful: a literal
 "before/after" snapshot of the lane change that ended the episode.
 
+## Gauntlet — environment design as the lever
+
+A late finding worth its own section. The default scenarios
+(low/medium/high) let the ego pre-position in an open lane and never
+get stuck — so "cruise, don't weave" is globally optimal and *every*
+trained PPO converges to it regardless of reward weights. Two PPO
+variants trained with aggressive speed-favoring rewards both
+converged to the canonical `ppo_v2`'s exact policy (verified: 0 of
+60 episodes differed in a single lane-change decision).
+
+Getting visible overtaking required changing the **environment**,
+not the reward. The `gauntlet` scenario floods lane 0 with slow
+vehicles and spawns the ego in lane 0 — it starts stuck behind a
+~20-vehicle slow wall with no open lane to escape into.
+
+![Gauntlet comparison — ppo_v2 stuck vs ppo_v5 escaping](images/gauntlet_comparison.png)
+
+| Agent on the gauntlet | Mean speed | Total return | Lane changes/min | Collisions |
+| --- | --- | --- | --- | --- |
+| `ppo_v2` (not trained for it) | 24.8 m/s | 93 | **0.0** | 0% |
+| **`ppo_v5_gauntlet`** | **32.7 m/s** | **233** | 2.8 | 5% |
+
+`ppo_v2` gives up — it sits in lane 0 matched to the 25 m/s slow
+wall and makes zero lane changes. `ppo_v5_gauntlet` (trained on the
+gauntlet, with the *default* reward) escapes the slow lane within
+the first second and cruises at 32.7 m/s, finishing the 1 km road
+in 30.7 s vs 40.0 s. The plot above makes it visual: `ppo_v2`'s
+gold trajectory stays pinned to lane 0; `ppo_v5`'s jumps out
+immediately.
+
+**The lesson:** when the target behavior isn't emerging, check
+whether the environment makes a simpler strategy globally optimal
+before reaching for reward tuning. Here, environment design was the
+lever — once the env made overtaking *necessary*, even the default
+reward produced it.
+
 ## Training-time numbers
 
 | Run | Wall-clock | env-steps/sec | Result |

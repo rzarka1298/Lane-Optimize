@@ -14,12 +14,21 @@ const AGENT_LABELS: Record<string, string> = {
     "PPO conservative — 0% collisions everywhere (canonical)",
   ppo_v1_mixed_500k:
     "PPO aggressive — active lane-changer (15% high-density col)",
+  ppo_v5_gauntlet_300k:
+    "PPO gauntlet — escapes the slow lane (use with Gauntlet density)",
   dqn_v3_mixed_200k: "DQN generalist — mixed-density training",
   dqn_v2_100k_huber: "DQN low-density specialist",
   mappo_v1_300k: "MAPPO multi-agent — trained vs 3 other egos",
 };
 
-const QUICK_PICKS: { label: string; agent: string; tooltip: string }[] = [
+interface QuickPick {
+  label: string;
+  agent: string;
+  tooltip: string;
+  density?: Density; // if set, the pick also switches density
+}
+
+const QUICK_PICKS: QuickPick[] = [
   {
     label: "Conservative",
     agent: "ppo_v2_safety_heavy_150k",
@@ -37,6 +46,14 @@ const QUICK_PICKS: { label: string; agent: string; tooltip: string }[] = [
     agent: "mappo_v1_300k",
     tooltip:
       "Parameter-sharing PPO trained against 3 other egos competing for space.",
+  },
+  {
+    label: "Gauntlet",
+    agent: "ppo_v5_gauntlet_300k",
+    density: "gauntlet",
+    tooltip:
+      "Trained on the gauntlet scenario — starts stuck in the slow lane and " +
+      "weaves out. 32.7 m/s vs 24.8 for an untrained agent. Sets density too.",
   },
 ];
 
@@ -237,7 +254,10 @@ export function App() {
           return (
             <button
               key={qp.agent}
-              onClick={() => setAgent(qp.agent)}
+              onClick={() => {
+                setAgent(qp.agent);
+                if (qp.density) setDensity(qp.density);
+              }}
               disabled={streaming || !available}
               title={qp.tooltip}
               className={`rounded px-3 py-1 text-xs transition ${
@@ -288,6 +308,7 @@ export function App() {
             <option value="low">low</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
+            <option value="gauntlet">gauntlet</option>
           </select>
         </label>
         <label className="flex items-center gap-2">
@@ -422,6 +443,25 @@ export function App() {
         <img
           src="/lane_efficiency.png"
           alt="Per-replay lane occupancy heatmaps with ego trajectory overlay"
+          className="mt-2 w-full rounded border border-slate-800"
+        />
+      </details>
+
+      <details className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
+        <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
+          Overtaking — trained vs untrained on the gauntlet scenario
+        </summary>
+        <p className="mt-2 text-slate-500">
+          The gauntlet floods lane 0 with slow traffic and starts the ego
+          there. Top: ppo_v2 (not trained for it) gives up — stays pinned
+          to lane 0 at 24.8 m/s, zero lane changes. Bottom: ppo_v5
+          (trained on the gauntlet) escapes within the first second and
+          cruises at 32.7 m/s. Try it live with the &quot;Gauntlet&quot;
+          quick-pick.
+        </p>
+        <img
+          src="/gauntlet_comparison.png"
+          alt="Gauntlet comparison — ppo_v2 stuck in lane 0 vs ppo_v5 escaping"
           className="mt-2 w-full rounded border border-slate-800"
         />
       </details>

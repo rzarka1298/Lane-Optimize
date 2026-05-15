@@ -26,7 +26,7 @@ class StartSimRequest(BaseModel):
         description="agent name — must match a checkpoint or builtin baseline",
         examples=["ppo", "dqn", "random", "greedy", "safe_rule"],
     )
-    density: Literal["low", "medium", "high"] = "medium"
+    density: Literal["low", "medium", "high", "gauntlet"] = "medium"
     seed: int | None = Field(default=None, description="reproducibility seed")
     max_steps: int = Field(default=1000, ge=10, le=10_000)
 

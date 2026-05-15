@@ -30,7 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent", required=True,
                         help="checkpoint stem (e.g., ppo_v2_safety_heavy_150k) "
                              "or baseline name (random/greedy/safe_rule)")
-    parser.add_argument("--density", choices=("low", "medium", "high"),
+    parser.add_argument("--density",
+                        choices=("low", "medium", "high", "gauntlet"),
                         default="medium")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-steps", type=int, default=1000)

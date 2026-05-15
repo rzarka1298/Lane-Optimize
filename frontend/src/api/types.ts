@@ -2,7 +2,7 @@
 // Single source of truth: Project-Documentation/backend/schemas.md.
 // Renaming a field on the Python side is a breaking change for these types.
 
-export type Density = "low" | "medium" | "high";
+export type Density = "low" | "medium" | "high" | "gauntlet";
 
 export type Action = "stay" | "change_left" | "change_right";
 
