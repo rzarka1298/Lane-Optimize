@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GAUNTLET scenario: a deliberately overtaking-forcing traffic mix.
+
+  Unlike the low/medium/high density files (which hold a constant
+  60/25/15 vType mix and only vary the rate), this scenario is shaped
+  to make the ego HAVE to overtake:
+
+    - f_slow runs at a high rate into lane 0 only. Slow vehicles
+      (25 m/s, lcKeepRight=2.0) pile up into a near-continuous wall
+      in the right lane. The env spawns the ego in lane 0 for this
+      scenario, so it starts behind that wall.
+    - f_normal + f_aggressive populate lanes 1-2 at a moderate rate,
+      so escaping lane 0 requires timing a gap, not just a free move.
+
+  The point: in low/medium/high the ego can pre-position in an open
+  lane and never get stuck. Here it starts stuck, and the only way
+  to go fast is to weave out. See LESSONS.md #15 (the racer arc) for
+  why a reward change alone could not produce this behavior.
+
+  Total arrival rate ~0.95 veh/s. Slow-vehicle steady-state in lane 0
+  is heavy (~0.5/s x ~40 s traversal = ~20 vehicles).
+-->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+
+    <route id="r_through" edges="e1"/>
+
+    <flow id="f_slow"       type="slow"       route="r_through"
+          begin="0" end="3600" period="exp(0.50)"
+          departLane="0"    departSpeed="desired"/>
+
+    <flow id="f_normal"     type="normal"     route="r_through"
+          begin="0" end="3600" period="exp(0.35)"
+          departLane="best" departSpeed="desired"/>
+
+    <flow id="f_aggressive" type="aggressive" route="r_through"
+          begin="0" end="3600" period="exp(0.10)"
+          departLane="best" departSpeed="desired"/>
+
+</routes>

@@ -30,8 +30,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train MaskablePPO on LaneIQEnv.")
     p.add_argument(
         "--density", default="mixed",
-        choices=("low", "medium", "high", "mixed"),
-        help="'mixed' samples low/medium/high uniformly per episode.",
+        choices=("low", "medium", "high", "mixed", "gauntlet"),
+        help="'mixed' samples low/medium/high uniformly per episode; "
+             "'gauntlet' is the overtaking-forcing scenario (ego starts "
+             "in lane 0 behind heavy slow traffic).",
     )
     p.add_argument("--total-steps", type=int, default=500_000)
     p.add_argument("--max-steps", type=int, default=1000)

@@ -60,10 +60,14 @@ from laneiq.env.sumo_runtime import (
 _log = logging.getLogger(__name__)
 
 # Map density label → route file relative to DEFAULT_SCENARIO_DIR.
+# "gauntlet" is not a density per se — it's an overtaking-forcing
+# scenario (heavy slow traffic in lane 0). The env spawns the ego in
+# lane 0 for it; see __init__.
 _DENSITY_TO_ROUTES: dict[str, str] = {
     "low": "routes_low.rou.xml",
     "medium": "routes_medium.rou.xml",
     "high": "routes_high.rou.xml",
+    "gauntlet": "routes_gauntlet.rou.xml",
 }
 
 # Hardcoded names for the 3-lane scenario. If we ever ship multi-edge
@@ -78,7 +82,7 @@ _EDGE_LENGTH_M: float = 1000.0
 # tests + an env back-to-back).
 _TRACI_LABEL: str = "laneiq_env"
 
-DensityT = Literal["low", "medium", "high"]
+DensityT = Literal["low", "medium", "high", "gauntlet"]
 
 
 class LaneIQEnv(gym.Env):
@@ -127,6 +131,13 @@ class LaneIQEnv(gym.Env):
 
         self._scenario_path = scenario_path
         self._density: DensityT = density
+
+        # The gauntlet scenario only works if the ego starts in lane 0
+        # (behind the slow-vehicle wall). Force it regardless of the
+        # caller's ego_depart_lane — a gauntlet episode that spawns the
+        # ego in lane 2 defeats the entire purpose.
+        if density == "gauntlet":
+            ego_depart_lane = 0
         self._max_steps = max_steps
         self._warmup_steps = warmup_steps
         self._gui = gui
