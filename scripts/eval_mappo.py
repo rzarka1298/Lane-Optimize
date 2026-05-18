@@ -1,6 +1,6 @@
 """Evaluate a trained MAPPO (parameter-sharing PPO) checkpoint.
 
-Runs the shared policy in `LaneIQParallelEnv` across densities × seeds,
+Runs the shared policy in `LaneIQParallelEnv` across densities x seeds,
 records per-agent metrics. Single big difference vs single-agent eval:
 each episode produces N=4 rows (one per ego), not one.
 

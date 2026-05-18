@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     flat = axes.flatten()
 
     last_im = None
-    for ax, replay, path in zip(flat, replays, args.inputs):
+    for ax, replay, path in zip(flat, replays, args.inputs, strict=True):
         title = (
             f"{path.stem}  —  {replay['agent']} · {replay['density']} · "
             f"{replay['n_ticks']} ticks"

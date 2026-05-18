@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     flat_axes = axes.flatten()
 
     rendered = 0
-    for ax, panel in zip(flat_axes, PANELS):
+    for ax, panel in zip(flat_axes, PANELS, strict=True):
         run_dir = REPO_ROOT / panel["run_dir"]
         steps, values, tag = load_scalar(run_dir, panel["tags"])
 

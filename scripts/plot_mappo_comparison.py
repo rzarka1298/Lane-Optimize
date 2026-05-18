@@ -8,7 +8,7 @@ Two side-by-side panels:
   NOT apples-to-apples.
 
 - RIGHT: per-density collision rate. Same caveat: MAPPO collision rate
-  counts ego-episodes (5 seeds × 4 egos = 20), so a 5% MAPPO rate means
+  counts ego-episodes (5 seeds x 4 egos = 20), so a 5% MAPPO rate means
   "1 of 20 ego-episodes ended in collision."
 
 Run:
@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     x = np.arange(len(densities))
     width = 0.35
 
-    fig, (axR, axC) = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
+    fig, (ax_r, ax_c) = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
 
     # ---- Returns panel
     ppo_ret = [ppo[d]["return"] for d in densities]
@@ -94,36 +94,36 @@ def main(argv: list[str] | None = None) -> int:
     mappo_ret = [mappo[d]["return"] for d in densities]
     mappo_ret_std = [mappo[d]["return_std"] for d in densities]
 
-    axR.bar(x - width / 2, ppo_ret, width, yerr=ppo_ret_std, capsize=4,
+    ax_r.bar(x - width / 2, ppo_ret, width, yerr=ppo_ret_std, capsize=4,
             color="#1f77b4", label="Single-agent PPO (1 ego)", alpha=0.85,
             edgecolor="black", linewidth=0.7)
-    axR.bar(x + width / 2, mappo_ret, width, yerr=mappo_ret_std, capsize=4,
+    ax_r.bar(x + width / 2, mappo_ret, width, yerr=mappo_ret_std, capsize=4,
             color="#ff7f0e", label="MAPPO mean per-ego (4 egos)", alpha=0.85,
             edgecolor="black", linewidth=0.7)
-    axR.set_xticks(x)
-    axR.set_xticklabels(densities)
-    axR.set_ylabel("Mean episode return")
-    axR.set_title("Per-density mean return")
-    axR.legend(loc="upper right", fontsize=9)
-    axR.grid(True, axis="y", alpha=0.3)
-    axR.axhline(0, color="gray", linewidth=0.5, alpha=0.5)
+    ax_r.set_xticks(x)
+    ax_r.set_xticklabels(densities)
+    ax_r.set_ylabel("Mean episode return")
+    ax_r.set_title("Per-density mean return")
+    ax_r.legend(loc="upper right", fontsize=9)
+    ax_r.grid(True, axis="y", alpha=0.3)
+    ax_r.axhline(0, color="gray", linewidth=0.5, alpha=0.5)
 
     # ---- Collision rate panel
     ppo_col = [ppo[d]["collision_rate"] * 100 for d in densities]
     mappo_col = [mappo[d]["collision_rate"] * 100 for d in densities]
-    axC.bar(x - width / 2, ppo_col, width,
+    ax_c.bar(x - width / 2, ppo_col, width,
             color="#1f77b4", label="Single-agent PPO (1 ego)", alpha=0.85,
             edgecolor="black", linewidth=0.7)
-    axC.bar(x + width / 2, mappo_col, width,
+    ax_c.bar(x + width / 2, mappo_col, width,
             color="#ff7f0e", label="MAPPO per-ego (4 egos / scene)",
             alpha=0.85, edgecolor="black", linewidth=0.7)
-    axC.set_xticks(x)
-    axC.set_xticklabels(densities)
-    axC.set_ylabel("Collision rate (%)")
-    axC.set_title("Per-density per-ego collision rate")
-    axC.legend(loc="upper left", fontsize=9)
-    axC.grid(True, axis="y", alpha=0.3)
-    axC.set_ylim(0, max(max(ppo_col), max(mappo_col)) * 1.4 + 5)
+    ax_c.set_xticks(x)
+    ax_c.set_xticklabels(densities)
+    ax_c.set_ylabel("Collision rate (%)")
+    ax_c.set_title("Per-density per-ego collision rate")
+    ax_c.legend(loc="upper left", fontsize=9)
+    ax_c.grid(True, axis="y", alpha=0.3)
+    ax_c.set_ylim(0, max(max(ppo_col), max(mappo_col)) * 1.4 + 5)
 
     fig.suptitle("Single-agent PPO vs parameter-sharing MAPPO",
                  fontsize=13, fontweight="bold")
