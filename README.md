@@ -1,5 +1,18 @@
 # LaneIQ
 
+> **An RL agent that learns to drive a highway — trained from scratch,
+> evaluated over 300 episodes, and streamed live to a browser.**
+
+<!--
+  HERO GIF — drop the recording here.
+  Record the 30-second cut from docs/demo_storyboard.md (the gauntlet
+  payoff: agent starts stuck behind slow traffic, then escapes), export
+  to docs/images/demo.gif (keep it under ~8 MB, ~12 fps), and the line
+  below will render it. Until then it shows a broken-image placeholder
+  — that's expected pre-recording.
+-->
+![LaneIQ live demo — the gauntlet agent escaping slow traffic](docs/images/demo.gif)
+
 End-to-end reinforcement learning for highway lane optimization in
 [SUMO](https://eclipse.dev/sumo/), with a live React + FastAPI
 dashboard streaming a trained agent's decisions in real time.

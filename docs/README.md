@@ -16,6 +16,7 @@ internal notes live in `Project-Documentation/`, which is gitignored.)
 | **[rl_design.md](rl_design.md)** | The RL problem statement, observation/action spaces, reward function, and the algorithms (DQN-from-scratch, PPO via SB3, parameter-sharing MAPPO). |
 | **[results.md](results.md)** | The numbers: 20-seed final eval matrix, v1-vs-v2 PPO comparison, MAPPO multi-agent results, embedded plots, and the headline narrative. |
 | **[quickstart.md](quickstart.md)** | Install the project, run the test suite, drive the live demo locally. ~10 minutes from `git clone` to "watching cars on the dashboard." |
+| **[demo_storyboard.md](demo_storyboard.md)** | Shot-by-shot script for recording the demo video / README hero GIF. |
 
 ## Headline numbers
 
