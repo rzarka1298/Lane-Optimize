@@ -42,9 +42,14 @@
            color="40,80,200" guiShape="passenger/hatchback"/>
 
     <!-- Ego: the RL-controlled vehicle. Krauss longitudinal model is shared
-         with `normal`; lane-change is owned by the policy (see env code). -->
+         with `normal`; lane-change is owned by the policy (see env code).
+         maxSpeed=50 is above the 36.11 limit of the low/medium/high
+         scenarios (so it has no effect there — the ego still caps at the
+         road limit). It only becomes reachable in the `rush` scenario,
+         which raises the lane limit to 50, making the ego uniquely the
+         fastest vehicle on the road. -->
     <vType id="ego" vClass="passenger"
-           maxSpeed="40.0" accel="2.5" decel="4.5" emergencyDecel="9.0"
+           maxSpeed="50.0" accel="2.5" decel="4.5" emergencyDecel="9.0"
            sigma="0.0" tau="1.0" minGap="2.0" length="4.5"
            color="255,215,0" guiShape="passenger/sedan"/>
 

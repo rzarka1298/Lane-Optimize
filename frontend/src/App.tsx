@@ -309,6 +309,7 @@ export function App() {
             <option value="medium">medium</option>
             <option value="high">high</option>
             <option value="gauntlet">gauntlet</option>
+            <option value="rush">rush</option>
           </select>
         </label>
         <label className="flex items-center gap-2">

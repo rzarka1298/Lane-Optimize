@@ -60,15 +60,25 @@ from laneiq.env.sumo_runtime import (
 _log = logging.getLogger(__name__)
 
 # Map density label → route file relative to DEFAULT_SCENARIO_DIR.
-# "gauntlet" is not a density per se — it's an overtaking-forcing
-# scenario (heavy slow traffic in lane 0). The env spawns the ego in
-# lane 0 for it; see __init__.
+# "gauntlet" and "rush" are not densities per se — they're special
+# scenarios. gauntlet forces overtaking (heavy slow traffic in lane 0,
+# ego spawned in lane 0). rush is a high-speed scenario: the road
+# speed limit is raised so the ego (vType maxSpeed 50) can genuinely
+# outrun every background vehicle. See __init__ and reset().
 _DENSITY_TO_ROUTES: dict[str, str] = {
     "low": "routes_low.rou.xml",
     "medium": "routes_medium.rou.xml",
     "high": "routes_high.rou.xml",
     "gauntlet": "routes_gauntlet.rou.xml",
+    "rush": "routes_rush.rou.xml",
 }
+
+# The rush scenario raises the lane speed limit to this value (m/s) at
+# reset() via TraCI. The ego vType maxSpeed (50) then becomes reachable
+# while background vTypes stay capped at their own maxSpeeds
+# (aggressive 40, normal 33.33, slow 25) — so the ego is uniquely the
+# fastest vehicle on the road.
+_RUSH_SPEED_LIMIT: float = 50.0
 
 # Hardcoded names for the 3-lane scenario. If we ever ship multi-edge
 # networks, lift these into the constructor.
@@ -82,7 +92,7 @@ _EDGE_LENGTH_M: float = 1000.0
 # tests + an env back-to-back).
 _TRACI_LABEL: str = "laneiq_env"
 
-DensityT = Literal["low", "medium", "high", "gauntlet"]
+DensityT = Literal["low", "medium", "high", "gauntlet", "rush"]
 
 
 class LaneIQEnv(gym.Env):
@@ -138,6 +148,14 @@ class LaneIQEnv(gym.Env):
         # ego in lane 2 defeats the entire purpose.
         if density == "gauntlet":
             ego_depart_lane = 0
+
+        # The rush scenario raises the lane speed limit (see reset()).
+        # The reward's v_max — the speed at which the speed term
+        # saturates — must match, or the policy gets no incentive to
+        # exceed the old 36.11 limit. v_max is a scenario constant, not
+        # a tuning knob, so override it regardless of what was passed.
+        if density == "rush":
+            reward_config = replace(reward_config, v_max=_RUSH_SPEED_LIMIT)
         self._max_steps = max_steps
         self._warmup_steps = warmup_steps
         self._gui = gui
@@ -188,6 +206,13 @@ class LaneIQEnv(gym.Env):
 
         traci.start(argv, label=_TRACI_LABEL)
         self._sumo_running = True
+
+        # Rush scenario: raise the lane speed limit so the ego (vType
+        # maxSpeed 50) can outrun all background traffic. The observation
+        # builder reads the lane limit live (_lookup_v_max_lane), so the
+        # speed normalization adapts automatically — no obs_config change.
+        if self._density == "rush":
+            traci.edge.setMaxSpeed(_EDGE_ID, _RUSH_SPEED_LIMIT)
 
         # Warmup: let background traffic populate before the ego enters,
         # so the first observation reflects realistic neighbors.

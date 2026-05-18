@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="checkpoint stem (e.g., ppo_v2_safety_heavy_150k) "
                              "or baseline name (random/greedy/safe_rule)")
     parser.add_argument("--density",
-                        choices=("low", "medium", "high", "gauntlet"),
+                        choices=("low", "medium", "high", "gauntlet", "rush"),
                         default="medium")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-steps", type=int, default=1000)

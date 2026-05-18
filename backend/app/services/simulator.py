@@ -40,7 +40,7 @@ from laneiq.env.highway_env import LaneIQEnv
 
 _log = logging.getLogger(__name__)
 
-DensityT = Literal["low", "medium", "high", "gauntlet"]
+DensityT = Literal["low", "medium", "high", "gauntlet", "rush"]
 _EGO_ID = "ego_0"  # mirrors highway_env constant
 _TICK_RATE_HZ = 10.0
 _TICK_INTERVAL_S = 1.0 / _TICK_RATE_HZ
