@@ -10,15 +10,20 @@
     aggressive 40 m/s · normal 33.33 m/s · slow 25 m/s · ego 50 m/s
 
   So the ego is uniquely the fastest car on the road. This route
-  file supplies a steady, all-lanes traffic stream (the standard
-  60/25/15 normal/aggressive/slow mix) at a medium-high rate — busy
-  enough that the ego must continuously weave to maintain its speed
-  advantage, but not so dense that the road gridlocks.
+  file supplies a LOW-density traffic stream (the standard 60/25/15
+  normal/aggressive/slow mix) — sparse enough that the fast ego has
+  room to actually use its speed and weave cleanly, rather than
+  charging into a wall of traffic.
 
-  Total arrival rate ~0.92 veh/s. Born out of the Week-8 request for
-  a demo that shows the agent threading high-speed through traffic;
-  the gauntlet (LESSONS #15) handles the start-stuck case, rush
-  handles the outrun-everyone case.
+  Total arrival rate ~0.30 veh/s (≈ the low-density file). At 50 m/s
+  the ego's closing speed onto slow traffic is high (up to 25 m/s),
+  so a busy road made the problem unlearnable — the first attempt
+  (ppo_v6) thrashed. Lowering the density gives the policy room to
+  spot slow vehicles early and change lanes with margin.
+
+  Born out of the Week-8 request for a demo that shows the agent
+  threading high-speed through traffic; the gauntlet (LESSONS #15)
+  handles the start-stuck case, rush handles the outrun-everyone case.
 -->
 <routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
@@ -26,15 +31,15 @@
     <route id="r_through" edges="e1"/>
 
     <flow id="f_normal"     type="normal"     route="r_through"
-          begin="0" end="3600" period="exp(0.55)"
+          begin="0" end="3600" period="exp(0.18)"
           departLane="best" departSpeed="desired"/>
 
     <flow id="f_aggressive" type="aggressive" route="r_through"
-          begin="0" end="3600" period="exp(0.23)"
+          begin="0" end="3600" period="exp(0.07)"
           departLane="best" departSpeed="desired"/>
 
     <flow id="f_slow"       type="slow"       route="r_through"
-          begin="0" end="3600" period="exp(0.14)"
+          begin="0" end="3600" period="exp(0.05)"
           departLane="0"    departSpeed="desired"/>
 
 </routes>
