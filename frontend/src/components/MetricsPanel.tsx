@@ -65,7 +65,9 @@ export function MetricsPanel({ history, lastTick }: Props) {
 
   return (
     <section className="space-y-3">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div
+        className={`grid grid-cols-2 gap-2 ${lastTick && lastTick.lap_count > 0 ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}
+      >
         <Stat label="ego speed" value={ego ? `${ego.speed.toFixed(1)} m/s` : "—"} />
         <Stat
           label="ego lane"
@@ -81,6 +83,9 @@ export function MetricsPanel({ history, lastTick }: Props) {
           value={totalReturn !== null && totalReturn !== undefined ? totalReturn.toFixed(1) : "—"}
           accent
         />
+        {lastTick && lastTick.lap_count > 0 && (
+          <Stat label="laps" value={String(lastTick.lap_count)} accent />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

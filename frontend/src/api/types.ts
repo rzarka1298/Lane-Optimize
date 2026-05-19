@@ -37,6 +37,7 @@ export interface SimTick {
   terminated: boolean;
   truncated: boolean;
   info: Record<string, number>;
+  lap_count: number;
 }
 
 // WebSocket envelope. Backend sends with exclude_none=True, so optional

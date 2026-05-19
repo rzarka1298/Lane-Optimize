@@ -164,8 +164,12 @@ function drawFrame(
 
   for (const v of state.lastTick.vehicles) {
     const prev = prevById.get(v.id);
-    const x = prev ? prev.x + (v.x - prev.x) * progress : v.x;
-    const y = prev ? prev.y + (v.y - prev.y) * progress : v.y;
+    // Loop-mode wrap detection: when the ego (or any car) wraps from
+    // x≈1000 to x≈0, prev.x - v.x is huge. Lerping across that would
+    // animate the car flying backward across the canvas. Snap instead.
+    const wrapped = prev && Math.abs(v.x - prev.x) > ROAD_LENGTH_M / 2;
+    const x = prev && !wrapped ? prev.x + (v.x - prev.x) * progress : v.x;
+    const y = prev && !wrapped ? prev.y + (v.y - prev.y) * progress : v.y;
 
     const screenX = x * xScale;
     // Map "lateral offset, in meters from lane 0 center" → screen y, with

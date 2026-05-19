@@ -47,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
         max_steps=args.max_steps,
         warmup_steps=50,
         seed=args.seed,
+        # Match the backend: the rush scenario auto-loops in the live
+        # demo, so a recorded rush replay should too (otherwise the
+        # replay ends after one lap and looks shorter than the live run).
+        loop=(args.density == "rush"),
     )
     obs, _info = env.reset(seed=args.seed)
 

@@ -100,6 +100,11 @@ class SimulatorService:
                 max_steps=max_steps,
                 warmup_steps=50,
                 seed=seed,
+                # The rush scenario auto-loops in the live demo: when the
+                # ego reaches the end of the road, it's re-inserted at
+                # x=0 so the demo runs minutes, not ~25 s. Eval doesn't
+                # set this (single-lap consistency with other agents).
+                loop=(density == "rush"),
             )
             run_id = uuid.uuid4().hex[:8]
             run = _ActiveRun(
@@ -378,6 +383,7 @@ def build_tick(
         terminated=terminated,
         truncated=truncated,
         info={k: float(v) for k, v in info.get("reward_components", {}).items()},
+        lap_count=int(info.get("lap_count", 0)),
     )
 
 

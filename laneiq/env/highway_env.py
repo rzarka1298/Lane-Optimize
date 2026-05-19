@@ -46,6 +46,7 @@ from laneiq.env.observations import (
     ObservationConfig,
 )
 from laneiq.env.rewards import (
+    COMPONENT_KEYS,
     DEFAULT_REWARD_CONFIG,
     RewardConfig,
     RewardState,
@@ -130,6 +131,7 @@ class LaneIQEnv(gym.Env):
         seed: int | None = None,
         obs_config: ObservationConfig = DEFAULT_OBSERVATION_CONFIG,
         reward_config: RewardConfig = DEFAULT_REWARD_CONFIG,
+        loop: bool = False,
     ) -> None:
         """Construct the env. Does NOT start SUMO; that happens in `reset()`."""
         super().__init__()
@@ -164,6 +166,11 @@ class LaneIQEnv(gym.Env):
         self._init_seed = seed
         self._obs_config = obs_config
         self._reward_config = reward_config
+        self._loop = loop
+        # Lap count is incremented every time the ego completes the 1km
+        # road and is re-inserted at x=0 (loop mode only). Episode runs
+        # until collision or max_steps.
+        self._lap_count: int = 0
 
         self.observation_space: gym.spaces.Box = OBSERVATION_SPEC.space
         self.action_space: gym.spaces.Discrete = ACTION_SPACE
@@ -193,6 +200,7 @@ class LaneIQEnv(gym.Env):
 
         # Tear down any prior connection. Idempotent.
         self._close_sumo_safely()
+        self._lap_count = 0
 
         # Compose argv for this density. The route_file CLI flag overrides
         # whatever the .sumocfg names by default.
@@ -297,6 +305,31 @@ class LaneIQEnv(gym.Env):
             ego_collided = False
             ego_in_list = False
 
+        # Loop mode: if the ego exited cleanly (off the end of the road,
+        # no collision), re-insert it at x=0 and continue instead of
+        # terminating. The episode keeps running until collision or
+        # max_steps. The transition step returns zero reward (it's a
+        # teleport, not a real physical step).
+        if (
+            not ego_collided and not ego_in_list and self._loop
+            and self._reinsert_ego_for_lap()
+        ):
+            nxt = self._extract_reward_state()
+            obs = self._builder.build(_EGO_ID)
+            self._last_obs = obs
+            self._prev_reward_state = nxt
+            truncated = self._step_count >= self._max_steps
+            info = {
+                "reward_components": {k: 0.0 for k in COMPONENT_KEYS},
+                "step_count": self._step_count,
+                "lap_count": self._lap_count,
+                "lap_transition": True,
+            }
+            return obs, 0.0, False, truncated, info
+        # If loop was active but re-insertion failed (depart slot
+        # occupied at high traffic), fall through to the normal terminal
+        # path below.
+
         if ego_collided or not ego_in_list:
             # Episode is ending. Build a terminal RewardState; if the ego
             # is still in the list use real values, otherwise reuse prev
@@ -332,8 +365,37 @@ class LaneIQEnv(gym.Env):
         info: dict[str, Any] = {
             "reward_components": components,
             "step_count": self._step_count,
+            "lap_count": self._lap_count,
         }
         return obs, float(reward), False, truncated, info
+
+    def _reinsert_ego_for_lap(self) -> bool:
+        """Re-add the ego at x=0 to start a new lap. Returns True iff the
+        ego is visible in `getIDList` afterwards. Caller checks the bool
+        and falls back to terminal handling on False (the only failure
+        mode in practice is the depart slot being occupied at high traffic).
+
+        Sim steps consumed by the insertion wait are NOT counted in
+        `self._step_count` — they're internal env machinery, not policy
+        decisions.
+        """
+        try:
+            traci.vehicle.add(
+                vehID=_EGO_ID, routeID=_ROUTE_ID, typeID="ego",
+                depart="now",
+                departLane=str(self._ego_depart_lane),
+                departSpeed=str(self._ego_depart_speed),
+                departPos="0.0",
+            )
+        except traci.exceptions.TraCIException:
+            return False
+        for _ in range(50):
+            traci.simulationStep()
+            if _EGO_ID in traci.vehicle.getIDList():
+                disable_sumo_lane_change(traci, _EGO_ID)
+                self._lap_count += 1
+                return True
+        return False
 
     def close(self) -> None:
         """Shut down SUMO. Idempotent — safe to call multiple times or before

@@ -26,6 +26,7 @@ interface QuickPick {
   agent: string;
   tooltip: string;
   density?: Density; // if set, the pick also switches density
+  maxSteps?: number; // override default max_steps (e.g. for the looping rush)
 }
 
 const QUICK_PICKS: QuickPick[] = [
@@ -33,13 +34,18 @@ const QUICK_PICKS: QuickPick[] = [
     label: "Conservative",
     agent: "ppo_v2_safety_heavy_150k",
     tooltip:
-      "Safety-tuned PPO. Stays in lane, 0% collisions across all densities.",
+      "Safety-tuned PPO at medium density. Stays in lane, 0% collisions everywhere.",
   },
   {
     label: "Aggressive",
-    agent: "ppo_v1_mixed_500k",
+    agent: "ppo_v2_safety_heavy_150k",
+    density: "rush",
+    maxSteps: 3000,
     tooltip:
-      "Default-reward PPO. Active lane-changer; 15% collisions at high density.",
+      "Same disciplined PPO on the rush scenario: 50 m/s lane limit, " +
+      "slower traffic only. Ego cruises ~42 m/s — the fastest car on the " +
+      "road — overtaking slower vehicles. Track LOOPS so the run lasts " +
+      "minutes; watch the lap counter.",
   },
   {
     label: "Multi-agent",
@@ -86,6 +92,10 @@ export function App() {
   const liveValuesRef = useRef({ agent, density, loop });
   liveValuesRef.current = { agent, density, loop };
 
+  // max_steps the next Start should use. Quick-picks override this
+  // (the rush pick wants 3000 = ~5 min sim so the loop has room).
+  const [maxSteps, setMaxSteps] = useState<number>(1000);
+
   async function loadRuns(preserve?: string) {
     try {
       const rs = await api.getRuns();
@@ -126,7 +136,9 @@ export function App() {
   async function startWith(seedToUse: number) {
     setError(null);
     try {
-      await api.startSim({ agent, density, seed: seedToUse });
+      await api.startSim({
+        agent, density, seed: seedToUse, max_steps: maxSteps,
+      });
       setStreaming(true);
     } catch (e) {
       if (e instanceof ApiError) {
@@ -257,6 +269,7 @@ export function App() {
               onClick={() => {
                 setAgent(qp.agent);
                 if (qp.density) setDensity(qp.density);
+                setMaxSteps(qp.maxSteps ?? 1000);
               }}
               disabled={streaming || !available}
               title={qp.tooltip}

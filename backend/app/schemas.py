@@ -115,6 +115,7 @@ class SimTick(BaseModel):
     terminated: bool = False
     truncated: bool = False
     info: dict[str, float] = Field(default_factory=dict)  # reward components, etc.
+    lap_count: int = 0                # completed laps in loop mode (0 otherwise)
 
 
 class StreamFrame(BaseModel):

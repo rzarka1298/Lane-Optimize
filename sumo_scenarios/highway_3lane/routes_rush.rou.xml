@@ -30,16 +30,20 @@
 
     <route id="r_through" edges="e1"/>
 
+    <!--
+      Slow-heavy mix, no aggressive cars. Every vehicle the ego catches
+      is strictly slower than it (normal 33, slow 25 vs ego cap 50), so
+      cruising behind one costs real speed reward and overtaking pays.
+      We also push the slow flow into ALL lanes (departLane="best")
+      rather than concentrating it in lane 0 — so the ego has to pick
+      the clearest lane at each obstacle, not just escape one lane.
+    -->
     <flow id="f_normal"     type="normal"     route="r_through"
-          begin="0" end="3600" period="exp(0.18)"
-          departLane="best" departSpeed="desired"/>
-
-    <flow id="f_aggressive" type="aggressive" route="r_through"
-          begin="0" end="3600" period="exp(0.07)"
+          begin="0" end="3600" period="exp(0.10)"
           departLane="best" departSpeed="desired"/>
 
     <flow id="f_slow"       type="slow"       route="r_through"
-          begin="0" end="3600" period="exp(0.05)"
-          departLane="0"    departSpeed="desired"/>
+          begin="0" end="3600" period="exp(0.20)"
+          departLane="best" departSpeed="desired"/>
 
 </routes>
