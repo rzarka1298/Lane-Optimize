@@ -46,6 +46,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--log-dir", type=Path, default=None)
     p.add_argument("--checkpoint-out", type=Path, default=None)
+    p.add_argument(
+        "--init-from", type=Path, default=None,
+        help="continue training from an existing .zip checkpoint instead "
+             "of from scratch (fine-tuning). The loaded policy keeps its "
+             "weights; only the env/reward it trains against changes.",
+    )
 
     # PPO hyperparameter overrides.
     p.add_argument("--lr", type=float, default=None)
@@ -132,13 +138,26 @@ def main(argv: list[str] | None = None) -> int:
             reward_config=reward_cfg,
         )
 
-    agent = PPOAgent(
-        env=env,
-        config=cfg,
-        device=args.device,
-        seed=args.seed,
-        tensorboard_log=args.log_dir,
-    )
+    if args.init_from is not None:
+        # Fine-tuning: load an existing policy and continue training it
+        # against this env. The loaded model's hyperparameters are kept;
+        # `cfg` above is unused in this path.
+        print(f"  fine-tuning from = {args.init_from}")
+        agent = PPOAgent.from_checkpoint(
+            args.init_from, device=args.device, env=env,
+        )
+        # MaskablePPO.load doesn't restore a tensorboard_log; set it so
+        # `learn()` still writes scalars.
+        if args.log_dir is not None:
+            agent.model.tensorboard_log = str(args.log_dir)
+    else:
+        agent = PPOAgent(
+            env=env,
+            config=cfg,
+            device=args.device,
+            seed=args.seed,
+            tensorboard_log=args.log_dir,
+        )
 
     try:
         agent.learn(
