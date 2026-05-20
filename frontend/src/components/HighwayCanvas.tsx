@@ -12,9 +12,16 @@ const LANE_WIDTH_M = 3.2;
 // One tick = 100 ms of sim time. We lerp positions over this window.
 const TICK_DURATION_MS = 100;
 
-// Vehicles are 4.5–5.5 m long; at full road scale (1.2 px/m on a 1200 px
-// canvas) that's ~5 px wide. Floor it so they're actually visible.
-const MIN_VEHICLE_PX = 14;
+// Follow-camera: show this much road centered on the ego (m). With this
+// the road feels infinite — the ego is always visible at center and the
+// world scrolls past. Critical for the looping rush demo (without it,
+// audiences see the 1 km road compress vehicles into 5 px specks).
+const WINDOW_M = 500;
+// Off-screen margin so vehicles entering the window don't pop in abruptly.
+const OFFSCREEN_MARGIN_M = 30;
+// Min vehicle width on screen — at WINDOW_M=500 on a 1200 px canvas this
+// is barely the true vehicle length, but ensures they stay visible.
+const MIN_VEHICLE_PX = 18;
 
 const VEHICLE_FILL: Record<VType, string> = {
   ego: "#facc15",
@@ -95,6 +102,22 @@ interface RenderState {
   lastTickArrivedAt: number | null;
 }
 
+// Wrap-aware signed offset for the 1 km looping road. Returns the shortest
+// signed distance from a to b. Used both for ego-position lerping across
+// the loop wrap and for placing other vehicles relative to the ego.
+function loopOffset(delta: number): number {
+  const half = ROAD_LENGTH_M / 2;
+  if (delta > half) return delta - ROAD_LENGTH_M;
+  if (delta < -half) return delta + ROAD_LENGTH_M;
+  return delta;
+}
+
+function wrap(x: number): number {
+  let r = x % ROAD_LENGTH_M;
+  if (r < 0) r += ROAD_LENGTH_M;
+  return r;
+}
+
 function drawFrame(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -129,20 +152,6 @@ function drawFrame(
   }
   ctx.setLineDash([]);
 
-  // 100 m gridlines for spatial reference.
-  ctx.strokeStyle = "#1e293b";
-  ctx.fillStyle = "#475569";
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.textBaseline = "top";
-  for (let m = 100; m < ROAD_LENGTH_M; m += 100) {
-    const x = (m / ROAD_LENGTH_M) * w;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.stroke();
-    ctx.fillText(`${m}m`, x + 2, 2);
-  }
-
   if (!state.lastTick) return;
 
   const now = performance.now();
@@ -154,29 +163,83 @@ function drawFrame(
     );
   }
 
+  // Find the ego. Without it we can't camera-follow — render the lane
+  // bands (already done) and bail.
+  const ego = state.lastTick.vehicles.find((v) => v.is_ego);
+  if (!ego) return;
+  const prevEgo = state.prevTick?.vehicles.find((v) => v.is_ego);
+
+  // Camera center = ego's lerped world x. Wrap-aware lerp: on loop
+  // transition, snap to the new position so the camera doesn't pan
+  // backward across the entire road.
+  let cameraX = ego.x;
+  if (prevEgo) {
+    const dx = loopOffset(ego.x - prevEgo.x);
+    if (Math.abs(ego.x - prevEgo.x) > ROAD_LENGTH_M / 2) {
+      // ego wrapped — snap to current rather than lerping through the loop
+      cameraX = ego.x;
+    } else {
+      cameraX = wrap(prevEgo.x + dx * progress);
+    }
+  }
+
+  // px per meter under the follow-camera transform.
+  const xScale = w / WINDOW_M;
+  const halfWindow = WINDOW_M / 2;
+  const vehicleH = laneH * 0.55;
+
+  // 100 m gridlines, follow-camera style. Walk the world positions that
+  // could be visible in the current window and render those that are.
+  ctx.strokeStyle = "#1e293b";
+  ctx.fillStyle = "#475569";
+  ctx.font = "10px ui-monospace, monospace";
+  ctx.textBaseline = "top";
+  // Start a bit behind the leftmost visible meter, rounded down to 100m.
+  const leftWorld = cameraX - halfWindow - OFFSCREEN_MARGIN_M;
+  const rightWorld = cameraX + halfWindow + OFFSCREEN_MARGIN_M;
+  const firstGrid = Math.floor(leftWorld / 100) * 100;
+  for (let m = firstGrid; m <= rightWorld + 100; m += 100) {
+    const labelM = wrap(m); // 0..999 — repeats every km because of the loop
+    const rel = loopOffset(wrap(m) - cameraX);
+    if (Math.abs(rel) > halfWindow + OFFSCREEN_MARGIN_M) continue;
+    const screenX = w / 2 + rel * xScale;
+    ctx.beginPath();
+    ctx.moveTo(screenX, 0);
+    ctx.lineTo(screenX, h);
+    ctx.stroke();
+    ctx.fillText(`${labelM}m`, screenX + 2, 2);
+  }
+
+  // Vehicles. Build prev-by-id once.
   const prevById = new Map<string, Vehicle>();
   if (state.prevTick) {
     for (const v of state.prevTick.vehicles) prevById.set(v.id, v);
   }
 
-  const xScale = w / ROAD_LENGTH_M;
-  const vehicleH = laneH * 0.55;
+  // Render non-ego first so the ego paints on top.
+  const sorted = [...state.lastTick.vehicles].sort(
+    (a, b) => (a.is_ego ? 1 : 0) - (b.is_ego ? 1 : 0),
+  );
 
-  for (const v of state.lastTick.vehicles) {
+  for (const v of sorted) {
     const prev = prevById.get(v.id);
-    // Loop-mode wrap detection: when the ego (or any car) wraps from
-    // x≈1000 to x≈0, prev.x - v.x is huge. Lerping across that would
-    // animate the car flying backward across the canvas. Snap instead.
+    // Per-vehicle wrap detect (only the ego ever wraps in current envs,
+    // but be defensive — other future scenarios may loop background
+    // traffic too).
     const wrapped = prev && Math.abs(v.x - prev.x) > ROAD_LENGTH_M / 2;
-    const x = prev && !wrapped ? prev.x + (v.x - prev.x) * progress : v.x;
-    const y = prev && !wrapped ? prev.y + (v.y - prev.y) * progress : v.y;
+    const vx =
+      prev && !wrapped ? prev.x + (v.x - prev.x) * progress : v.x;
+    const vy =
+      prev && !wrapped ? prev.y + (v.y - prev.y) * progress : v.y;
 
-    const screenX = x * xScale;
-    // Map "lateral offset, in meters from lane 0 center" → screen y, with
-    // lane 2 at the top. See backend/app/schemas.md for the y formula.
-    const screenY = h - (y / LANE_WIDTH_M + 0.5) * laneH;
+    const rel = loopOffset(vx - cameraX);
+    if (Math.abs(rel) > halfWindow + OFFSCREEN_MARGIN_M) continue;
 
-    const trueWidth = 4.5 * xScale; // worst-case length for screen sizing
+    const screenX = w / 2 + rel * xScale;
+    // y formula mirrored from backend/app/schemas.md.
+    const screenY = h - (vy / LANE_WIDTH_M + 0.5) * laneH;
+
+    const trueWidth = 4.5 * xScale;
     const width = Math.max(MIN_VEHICLE_PX, trueWidth);
 
     ctx.fillStyle = VEHICLE_FILL[v.vtype];
@@ -191,7 +254,6 @@ function drawFrame(
         width,
         vehicleH,
       );
-      // Label above the ego so a viewer instantly clocks "this is the AI."
       ctx.fillStyle = "#facc15";
       ctx.font = "bold 11px ui-monospace, monospace";
       ctx.textBaseline = "bottom";
@@ -200,5 +262,24 @@ function drawFrame(
       ctx.textAlign = "start";
       ctx.textBaseline = "top";
     }
+  }
+
+  // Camera overlay: km marker showing the ego's absolute road position
+  // (helps the viewer orient when the road scrolls and looks endless).
+  ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+  ctx.fillRect(w - 110, 6, 104, 18);
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "11px ui-monospace, monospace";
+  ctx.textBaseline = "top";
+  ctx.textAlign = "right";
+  ctx.fillText(`road pos: ${cameraX.toFixed(0)}m`, w - 10, 10);
+  ctx.textAlign = "start";
+
+  if (state.lastTick.lap_count > 0) {
+    ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+    ctx.fillRect(6, 6, 86, 18);
+    ctx.fillStyle = "#facc15";
+    ctx.font = "bold 11px ui-monospace, monospace";
+    ctx.fillText(`LAP ${state.lastTick.lap_count}`, 14, 10);
   }
 }

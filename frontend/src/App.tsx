@@ -33,6 +33,7 @@ const QUICK_PICKS: QuickPick[] = [
   {
     label: "Conservative",
     agent: "ppo_v2_safety_heavy_150k",
+    density: "medium",
     tooltip:
       "Safety-tuned PPO at medium density. Stays in lane, 0% collisions everywhere.",
   },
@@ -43,13 +44,14 @@ const QUICK_PICKS: QuickPick[] = [
     maxSteps: 3000,
     tooltip:
       "Same disciplined PPO on the rush scenario: 50 m/s lane limit, " +
-      "slower traffic only. Ego cruises ~42 m/s — the fastest car on the " +
+      "slower traffic only. Ego cruises ~40 m/s — the fastest car on the " +
       "road — overtaking slower vehicles. Track LOOPS so the run lasts " +
       "minutes; watch the lap counter.",
   },
   {
     label: "Multi-agent",
     agent: "mappo_v1_300k",
+    density: "medium",
     tooltip:
       "Parameter-sharing PPO trained against 3 other egos competing for space.",
   },
@@ -59,7 +61,7 @@ const QUICK_PICKS: QuickPick[] = [
     density: "gauntlet",
     tooltip:
       "Trained on the gauntlet scenario — starts stuck in the slow lane and " +
-      "weaves out. 32.7 m/s vs 24.8 for an untrained agent. Sets density too.",
+      "weaves out. 32.7 m/s vs 24.8 for an untrained agent.",
   },
 ];
 
@@ -262,7 +264,10 @@ export function App() {
         </span>
         {QUICK_PICKS.map((qp) => {
           const available = runs.some((r) => r.name === qp.agent);
-          const isActive = agent === qp.agent;
+          // Active iff BOTH agent and density match. Without the density
+          // check, Conservative and Aggressive (both ppo_v2) would both
+          // light up whenever ppo_v2 is the selected agent.
+          const isActive = agent === qp.agent && density === qp.density;
           return (
             <button
               key={qp.agent}
