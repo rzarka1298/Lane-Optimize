@@ -1,0 +1,2 @@
+agent,density,n_seeds,mean_speed_mps_mean,mean_speed_mps_std,return_total_mean,return_total_std,collision_rate,reached_end_rate,lane_changes_per_min_mean,lane_changes_per_min_std,jerk_rms_mean,jerk_rms_std,near_miss_rate_mean,near_miss_rate_std,episode_length_s_mean
+ppo,rush,5,37.207430470731154,3.4060897615822303,132.56522935162252,50.49735051296666,0.0,1.0,3.04350312576914,0.8205435106627212,0.8318679166757164,0.16530747749281904,0.4432900500889515,0.3192877765384685,27.060000000000002

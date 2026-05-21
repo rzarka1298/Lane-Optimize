@@ -91,8 +91,8 @@ _RUSH_DESPAWN_BEHIND_M: float = 250.0    # despawn threshold behind ego
 # Sparse spawning so the ego has clear road most of the time and only
 # slows when a leader is genuinely close. (15-30 ticks was too dense —
 # ego averaged 35 m/s, often caught in traffic. 40-80 keeps 4-7 visible.)
-_RUSH_SPAWN_TICK_RANGE: tuple[int, int] = (40, 80)  # 4-8s between spawns
-_RUSH_INIT_TRAFFIC: int = 5              # vehicles to pre-seed at reset
+_RUSH_SPAWN_TICK_RANGE: tuple[int, int] = (25, 50)  # 2.5-5s between spawns
+_RUSH_INIT_TRAFFIC: int = 7              # vehicles to pre-seed at reset
 # 70/30 normal/slow — fewer slow vehicles means fewer hard speed walls.
 _RUSH_SLOW_FRACTION: float = 0.30
 
@@ -465,9 +465,13 @@ class LaneIQEnv(gym.Env):
         self._spawn_rush_vehicle(ego_x + _RUSH_SPAWN_AHEAD_M)
 
     def _despawn_behind(self) -> None:
-        """Per-step: remove background vehicles that have fallen far
-        enough behind the ego (wrap-aware). The ego itself is never
-        despawned this way."""
+        """Per-step: remove background vehicles that are physically behind
+        the ego by more than `_RUSH_DESPAWN_BEHIND_M`. Uses ABSOLUTE
+        world distance, not wrap-aware — at the lap wrap the ego jumps
+        from x≈1000 to x=0, and wrap-aware math would suddenly treat
+        every car at x>500 as "lapped-behind" and despawn them all.
+        Background vehicles don't loop (they exit naturally at x=1000),
+        so absolute behindness is the right test."""
         try:
             ego_x = traci.vehicle.getLanePosition(_EGO_ID)
             ids = traci.vehicle.getIDList()
@@ -480,13 +484,7 @@ class LaneIQEnv(gym.Env):
                 vx = traci.vehicle.getLanePosition(vid)
             except traci.exceptions.TraCIException:
                 continue
-            # Signed wrap-aware offset; negative = behind the ego.
-            rel = vx - ego_x
-            if rel > _EDGE_LENGTH_M / 2:
-                rel -= _EDGE_LENGTH_M
-            elif rel < -_EDGE_LENGTH_M / 2:
-                rel += _EDGE_LENGTH_M
-            if rel < -_RUSH_DESPAWN_BEHIND_M:
+            if vx - ego_x < -_RUSH_DESPAWN_BEHIND_M:
                 with suppress(traci.exceptions.TraCIException):
                     traci.vehicle.remove(vid)
 
@@ -500,12 +498,17 @@ class LaneIQEnv(gym.Env):
         `self._step_count` — they're internal env machinery, not policy
         decisions.
         """
+        # Re-insertion speed = pre-wrap speed, so the ego doesn't
+        # visibly slow from ~40 m/s to ego_depart_speed (20 m/s) every
+        # lap. Falls back to depart speed only if there's no prior state.
+        prev = self._prev_reward_state
+        target_speed = prev.speed if prev is not None else self._ego_depart_speed
         try:
             traci.vehicle.add(
                 vehID=_EGO_ID, routeID=_ROUTE_ID, typeID="ego",
                 depart="now",
                 departLane=str(self._ego_depart_lane),
-                departSpeed=str(self._ego_depart_speed),
+                departSpeed=f"{target_speed:.2f}",
                 departPos="0.0",
             )
         except traci.exceptions.TraCIException:
@@ -514,6 +517,14 @@ class LaneIQEnv(gym.Env):
             traci.simulationStep()
             if _EGO_ID in traci.vehicle.getIDList():
                 disable_sumo_lane_change(traci, _EGO_ID)
+                # Re-apply the rush ego tuning that the env set on the
+                # initial spawn — disable_sumo_lane_change above re-set
+                # the mode to 0, undoing our speed-gain enable.
+                if self._density == "rush":
+                    traci.vehicle.setTau(_EGO_ID, 0.4)
+                    traci.vehicle.setMinGap(_EGO_ID, 1.0)
+                    traci.vehicle.setAccel(_EGO_ID, 4.0)
+                    traci.vehicle.setLaneChangeMode(_EGO_ID, 1040)
                 self._lap_count += 1
                 return True
         return False
