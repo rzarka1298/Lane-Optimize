@@ -1,49 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  RUSH scenario: a high-speed weaving showcase.
+  RUSH scenario: all traffic spawned dynamically by the env via TraCI
+  (see laneiq/env/highway_env.py:_maybe_spawn_ahead). This file only
+  declares the route the env uses for vehicle.add(...). NO Poisson
+  flows — so vehicles never appear/disappear at the fixed x=0/x=1000
+  endpoints in front of the camera.
 
-  The env raises the lane speed limit to 50 m/s at reset() (see
-  laneiq/env/highway_env.py). The ego vType (maxSpeed 50) can then
-  outrun every background vehicle, which stay capped at their own
-  maxSpeeds:
+  Background vehicles spawn ~300 m ahead of the ego (off-screen of
+  the follow-camera) and despawn ~250 m behind it. The result: the
+  road feels alive but vehicles only enter and leave the visible
+  window at its edges, in the direction the ego is moving.
 
-    aggressive 40 m/s · normal 33.33 m/s · slow 25 m/s · ego 50 m/s
-
-  So the ego is uniquely the fastest car on the road. This route
-  file supplies a LOW-density traffic stream (the standard 60/25/15
-  normal/aggressive/slow mix) — sparse enough that the fast ego has
-  room to actually use its speed and weave cleanly, rather than
-  charging into a wall of traffic.
-
-  Total arrival rate ~0.30 veh/s (≈ the low-density file). At 50 m/s
-  the ego's closing speed onto slow traffic is high (up to 25 m/s),
-  so a busy road made the problem unlearnable — the first attempt
-  (ppo_v6) thrashed. Lowering the density gives the policy room to
-  spot slow vehicles early and change lanes with margin.
-
-  Born out of the Week-8 request for a demo that shows the agent
-  threading high-speed through traffic; the gauntlet (LESSONS #15)
-  handles the start-stuck case, rush handles the outrun-everyone case.
+  Paired with:
+    - env raises the lane speed limit to 50 m/s in reset()
+    - env tunes ego Krauss params (tau=0.4, minGap=1, accel=4) so
+      it follows tight + accelerates hard
+    - env re-enables SUMO's lcSpeedGain so the ego autonomously
+      seeks faster lanes
 -->
 <routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
 
     <route id="r_through" edges="e1"/>
-
-    <!--
-      Slow-heavy mix, no aggressive cars. Every vehicle the ego catches
-      is strictly slower than it (normal 33, slow 25 vs ego cap 50), so
-      cruising behind one costs real speed reward and overtaking pays.
-      We also push the slow flow into ALL lanes (departLane="best")
-      rather than concentrating it in lane 0 — so the ego has to pick
-      the clearest lane at each obstacle, not just escape one lane.
-    -->
-    <flow id="f_normal"     type="normal"     route="r_through"
-          begin="0" end="3600" period="exp(0.10)"
-          departLane="best" departSpeed="desired"/>
-
-    <flow id="f_slow"       type="slow"       route="r_through"
-          begin="0" end="3600" period="exp(0.20)"
-          departLane="best" departSpeed="desired"/>
 
 </routes>

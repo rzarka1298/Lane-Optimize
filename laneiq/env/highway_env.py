@@ -81,6 +81,21 @@ _DENSITY_TO_ROUTES: dict[str, str] = {
 # fastest vehicle on the road.
 _RUSH_SPEED_LIMIT: float = 50.0
 
+# Rush scenario uses dynamic, ego-relative traffic spawning instead of
+# fixed-position Poisson flows. Vehicles appear just past the visible
+# camera window ahead of the ego and despawn once they've fallen far
+# enough behind. Tuned so a viewer never sees a car materialize or
+# vanish on-screen.
+_RUSH_SPAWN_AHEAD_M: float = 300.0       # spawn distance forward of ego
+_RUSH_DESPAWN_BEHIND_M: float = 250.0    # despawn threshold behind ego
+# Sparse spawning so the ego has clear road most of the time and only
+# slows when a leader is genuinely close. (15-30 ticks was too dense —
+# ego averaged 35 m/s, often caught in traffic. 40-80 keeps 4-7 visible.)
+_RUSH_SPAWN_TICK_RANGE: tuple[int, int] = (40, 80)  # 4-8s between spawns
+_RUSH_INIT_TRAFFIC: int = 5              # vehicles to pre-seed at reset
+# 70/30 normal/slow — fewer slow vehicles means fewer hard speed walls.
+_RUSH_SLOW_FRACTION: float = 0.30
+
 # Hardcoded names for the 3-lane scenario. If we ever ship multi-edge
 # networks, lift these into the constructor.
 _EGO_ID: str = "ego_0"
@@ -171,6 +186,9 @@ class LaneIQEnv(gym.Env):
         # road and is re-inserted at x=0 (loop mode only). Episode runs
         # until collision or max_steps.
         self._lap_count: int = 0
+        # Rush-mode dynamic traffic state (only used when density=="rush").
+        self._spawn_cooldown: int = 0
+        self._spawn_count: int = 0
 
         self.observation_space: gym.spaces.Box = OBSERVATION_SPEC.space
         self.action_space: gym.spaces.Discrete = ACTION_SPACE
@@ -256,6 +274,26 @@ class LaneIQEnv(gym.Env):
         # The ego is now in the vehicle list; disable its internal LC
         # override so the policy is the sole decider.
         disable_sumo_lane_change(traci, _EGO_ID)
+
+        # Rush-mode ego tuning + dynamic traffic setup (see module
+        # constants for the rationale). All scoped to this episode's
+        # SUMO process — no global vTypes changes.
+        if self._density == "rush":
+            # Krauss params: tight following + snappy accel so the ego
+            # holds high speed except when a leader is genuinely close.
+            traci.vehicle.setTau(_EGO_ID, 0.4)
+            traci.vehicle.setMinGap(_EGO_ID, 1.0)
+            traci.vehicle.setAccel(_EGO_ID, 4.0)
+            # Re-enable SUMO's speed-gain lane-change motivation only
+            # (mode = TraCI override "do if safe" | speed-gain "do if
+            # safe"). The RL policy can still issue changeLane(); SUMO
+            # will additionally pick faster lanes autonomously. The
+            # disable_sumo_lane_change() call above set mode=0; we
+            # override here.
+            traci.vehicle.setLaneChangeMode(_EGO_ID, 1040)
+            self._spawn_cooldown = 0
+            self._spawn_count = 0
+            self._seed_rush_traffic()
 
         # Initialize the observation builder (caches lane speed limit).
         self._builder = ObservationBuilder(traci, config=self._obs_config)
@@ -361,6 +399,12 @@ class LaneIQEnv(gym.Env):
         self._last_obs = obs
         self._prev_reward_state = nxt
 
+        # Rush mode: dynamic traffic. Runs only in the normal continuation
+        # path (lap-transition steps already advanced SUMO internally).
+        if self._density == "rush":
+            self._maybe_spawn_ahead()
+            self._despawn_behind()
+
         truncated = self._step_count >= self._max_steps
         info: dict[str, Any] = {
             "reward_components": components,
@@ -368,6 +412,83 @@ class LaneIQEnv(gym.Env):
             "lap_count": self._lap_count,
         }
         return obs, float(reward), False, truncated, info
+
+    # ------------------------------------------------------------------
+    # Rush-mode dynamic traffic (see _RUSH_* constants).
+    # ------------------------------------------------------------------
+
+    def _seed_rush_traffic(self) -> None:
+        """Pre-populate vehicles ahead of the ego at reset so the road
+        isn't empty when the policy starts driving."""
+        try:
+            ego_x = traci.vehicle.getLanePosition(_EGO_ID)
+        except traci.exceptions.TraCIException:
+            return
+        for i in range(_RUSH_INIT_TRAFFIC):
+            # Distribute the initial fleet between ~30 m and ~400 m
+            # ahead, evenly-ish so they're not all stacked.
+            offset = 30 + (i + self.np_random.random()) * (370 / _RUSH_INIT_TRAFFIC)
+            self._spawn_rush_vehicle(ego_x + offset)
+
+    def _spawn_rush_vehicle(self, spawn_x: float) -> None:
+        """Add a single rush-mode background vehicle at `spawn_x` (wrap
+        to road length). Silent on insertion failure (slot occupied)."""
+        # Wrap to the road and clip safely inside (depart fails at the
+        # very edge).
+        spawn_x = spawn_x % _EDGE_LENGTH_M
+        spawn_x = max(5.0, min(_EDGE_LENGTH_M - 5.0, spawn_x))
+        # Pick vType per _RUSH_SLOW_FRACTION (slow vehicles are the
+        # visible "wall to overtake," normal are the in-between traffic).
+        vtype = "slow" if self.np_random.random() < _RUSH_SLOW_FRACTION else "normal"
+        lane = int(self.np_random.integers(0, 3))
+        vid = f"rush_{self._spawn_count}"
+        self._spawn_count += 1
+        with suppress(traci.exceptions.TraCIException):
+            traci.vehicle.add(
+                vehID=vid, routeID=_ROUTE_ID, typeID=vtype,
+                depart="now", departLane=str(lane),
+                departSpeed="desired", departPos=f"{spawn_x:.2f}",
+            )
+
+    def _maybe_spawn_ahead(self) -> None:
+        """Per-step: cooldown-throttled spawn ahead of the ego."""
+        if self._spawn_cooldown > 0:
+            self._spawn_cooldown -= 1
+            return
+        self._spawn_cooldown = int(
+            self.np_random.integers(*_RUSH_SPAWN_TICK_RANGE)
+        )
+        try:
+            ego_x = traci.vehicle.getLanePosition(_EGO_ID)
+        except traci.exceptions.TraCIException:
+            return
+        self._spawn_rush_vehicle(ego_x + _RUSH_SPAWN_AHEAD_M)
+
+    def _despawn_behind(self) -> None:
+        """Per-step: remove background vehicles that have fallen far
+        enough behind the ego (wrap-aware). The ego itself is never
+        despawned this way."""
+        try:
+            ego_x = traci.vehicle.getLanePosition(_EGO_ID)
+            ids = traci.vehicle.getIDList()
+        except traci.exceptions.TraCIException:
+            return
+        for vid in ids:
+            if vid == _EGO_ID:
+                continue
+            try:
+                vx = traci.vehicle.getLanePosition(vid)
+            except traci.exceptions.TraCIException:
+                continue
+            # Signed wrap-aware offset; negative = behind the ego.
+            rel = vx - ego_x
+            if rel > _EDGE_LENGTH_M / 2:
+                rel -= _EDGE_LENGTH_M
+            elif rel < -_EDGE_LENGTH_M / 2:
+                rel += _EDGE_LENGTH_M
+            if rel < -_RUSH_DESPAWN_BEHIND_M:
+                with suppress(traci.exceptions.TraCIException):
+                    traci.vehicle.remove(vid)
 
     def _reinsert_ego_for_lap(self) -> bool:
         """Re-add the ego at x=0 to start a new lap. Returns True iff the
