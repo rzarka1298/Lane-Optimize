@@ -486,37 +486,37 @@ class LaneIQEnv(gym.Env):
         try:
             alive = set(traci.vehicle.getIDList())
             ego_x = traci.vehicle.getLanePosition(_EGO_ID)
+            ego_lane = traci.vehicle.getLaneIndex(_EGO_ID)
         except traci.exceptions.TraCIException:
             return
         self._rush_ids &= alive
 
-        # Don't teleport-wrap cars while the ego is near the seam — a car
-        # wrapped to x≈0-12 could land right in the freshly-wrapped ego's
-        # path and cause a collision. During these ~12 ticks/lap, cars in
-        # the wrap zone exit naturally; the backstop refills them. Because
-        # the ego is wrapping too, any pop-out is masked by the lap
-        # transition.
-        ego_near_seam = ego_x < 60 or ego_x > _EDGE_LENGTH_M - 60
+        # Is the ego near the seam (about to wrap, or just wrapped)? If so,
+        # a car re-added at x≈0-12 must avoid the ego's lane or it lands
+        # in the freshly-wrapped ego's path → collision.
+        ego_near_seam = ego_x < 70 or ego_x > _EDGE_LENGTH_M - 70
         for vid in list(self._rush_ids):
-            if ego_near_seam:
-                break
             try:
                 x = traci.vehicle.getLanePosition(vid)
             except traci.exceptions.TraCIException:
                 continue
             if x >= _EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M:
                 # Wrap by remove + re-add a FRESH vehicle near the seam.
-                # NOT moveTo: moveTo teleports the car ~988 m backward,
-                # and SUMO then computes a huge negative gap to that car's
-                # former follower and registers a phantom collision (gaps
-                # of -900 m were ending episodes). A re-added vehicle has
-                # no follower-gap history, so no phantom collision. Speed
-                # and lane are preserved so motion stays continuous; the
-                # ID change is invisible to the demo.
+                # NOT moveTo: moveTo teleports the car ~988 m backward and
+                # SUMO then registers a phantom collision with that car's
+                # former follower (gaps of -900 m ended episodes). A
+                # re-added vehicle has no follower-gap history. Speed/lane
+                # preserved so motion stays continuous; the ID change is
+                # invisible. Wrapping ALWAYS (not skipping near the seam)
+                # avoids natural-exit pop-outs at the lap boundary.
                 with suppress(traci.exceptions.TraCIException):
                     speed = traci.vehicle.getSpeed(vid)
                     lane = traci.vehicle.getLaneIndex(vid)
                     vtype = traci.vehicle.getTypeID(vid)
+                    # When the ego is at the seam, never re-add into its
+                    # lane (would collide). Shift to an adjacent lane.
+                    if ego_near_seam and lane == ego_lane:
+                        lane = (ego_lane + 1) % 3
                     new_pos = x - (_EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M)
                     traci.vehicle.remove(vid)
                     self._rush_ids.discard(vid)
