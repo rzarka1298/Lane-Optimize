@@ -88,7 +88,7 @@ _RUSH_SPEED_LIMIT: float = 50.0
 # follow-camera (where x=1000 and x=0 render at the same screen
 # position), the wrap is visually seamless — no cars pop in or out of
 # the visible window. See _wrap_rush_traffic.
-_RUSH_TARGET_TRAFFIC: int = 8            # fleet size kept circulating
+_RUSH_TARGET_TRAFFIC: int = 6            # fleet size kept circulating
 _RUSH_WRAP_ZONE_M: float = 12.0          # wrap a car when within this of the end
 # 70/30 normal/slow — fewer slow vehicles means fewer hard speed walls.
 _RUSH_SLOW_FRACTION: float = 0.30
@@ -276,18 +276,7 @@ class LaneIQEnv(gym.Env):
         # constants for the rationale). All scoped to this episode's
         # SUMO process — no global vTypes changes.
         if self._density == "rush":
-            # Krauss params: tight following + snappy accel so the ego
-            # holds high speed except when a leader is genuinely close.
-            traci.vehicle.setTau(_EGO_ID, 0.4)
-            traci.vehicle.setMinGap(_EGO_ID, 1.0)
-            traci.vehicle.setAccel(_EGO_ID, 4.0)
-            # Re-enable SUMO's speed-gain lane-change motivation only
-            # (mode = TraCI override "do if safe" | speed-gain "do if
-            # safe"). The RL policy can still issue changeLane(); SUMO
-            # will additionally pick faster lanes autonomously. The
-            # disable_sumo_lane_change() call above set mode=0; we
-            # override here.
-            traci.vehicle.setLaneChangeMode(_EGO_ID, 1040)
+            self._apply_rush_ego_tuning()
             self._spawn_count = 0
             self._rush_ids = set()
             self._seed_rush_traffic()
@@ -425,6 +414,32 @@ class LaneIQEnv(gym.Env):
     # Rush-mode circular traffic (see _RUSH_* constants).
     # ------------------------------------------------------------------
 
+    def _apply_rush_ego_tuning(self) -> None:
+        """Tune the ego's SUMO dynamics for the rush demo. Applied on the
+        initial spawn AND after every lap re-insertion (re-inserting +
+        disable_sumo_lane_change reset these to defaults). Scoped to the
+        episode's SUMO process."""
+        # Krauss: fairly tight following + snappy accel so the ego holds
+        # high speed except when a leader is close. tau=0.6 (not 0.4 —
+        # 0.4 followed too close to brake in time and rear-ended slow
+        # cars).
+        traci.vehicle.setTau(_EGO_ID, 0.6)
+        traci.vehicle.setMinGap(_EGO_ID, 1.5)
+        traci.vehicle.setAccel(_EGO_ID, 4.0)
+        # Re-enable SUMO's speed-gain lane-change motivation (TraCI
+        # override "do if safe" | speed-gain "do if safe"). The policy
+        # can still issue changeLane(); SUMO additionally picks faster
+        # lanes autonomously.
+        traci.vehicle.setLaneChangeMode(_EGO_ID, 1040)
+        # Mild speed-gain eagerness. Cranking lcSpeedGain/lcAssertive
+        # made the ego ride the leftmost (fastest) lane and rear-end slow
+        # cars it caught there (lane 2 is already "fastest" so speed-gain
+        # won't pull it out, and at 47 m/s it can't brake in time).
+        # Keep it modest; rely on a thinner fleet + safe tau instead.
+        with suppress(traci.exceptions.TraCIException):
+            traci.vehicle.setParameter(
+                _EGO_ID, "laneChangeModel.lcSpeedGain", "3.0")
+
     def _seed_rush_traffic(self) -> None:
         """Pre-populate a fleet distributed around the loop ahead of the
         ego at reset, so the ego meets traffic throughout the lap."""
@@ -470,25 +485,43 @@ class LaneIQEnv(gym.Env):
         the ego."""
         try:
             alive = set(traci.vehicle.getIDList())
+            ego_x = traci.vehicle.getLanePosition(_EGO_ID)
         except traci.exceptions.TraCIException:
             return
         self._rush_ids &= alive
 
+        # Don't teleport-wrap cars while the ego is near the seam — a car
+        # wrapped to x≈0-12 could land right in the freshly-wrapped ego's
+        # path and cause a collision. During these ~12 ticks/lap, cars in
+        # the wrap zone exit naturally; the backstop refills them. Because
+        # the ego is wrapping too, any pop-out is masked by the lap
+        # transition.
+        ego_near_seam = ego_x < 60 or ego_x > _EDGE_LENGTH_M - 60
         for vid in list(self._rush_ids):
+            if ego_near_seam:
+                break
             try:
                 x = traci.vehicle.getLanePosition(vid)
             except traci.exceptions.TraCIException:
                 continue
             if x >= _EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M:
-                # Teleport the car back to the seam via moveTo — no
-                # remove/re-add, so no ID churn and no insertion queue
-                # (which was over-spawning). The car keeps its speed and
-                # identity; the ~(1000-12) m it loses is invisible because
-                # x=1000 and x=0 render at the same camera position.
-                lane = traci.vehicle.getLaneIndex(vid)
-                new_pos = x - (_EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M)
+                # Wrap by remove + re-add a FRESH vehicle near the seam.
+                # NOT moveTo: moveTo teleports the car ~988 m backward,
+                # and SUMO then computes a huge negative gap to that car's
+                # former follower and registers a phantom collision (gaps
+                # of -900 m were ending episodes). A re-added vehicle has
+                # no follower-gap history, so no phantom collision. Speed
+                # and lane are preserved so motion stays continuous; the
+                # ID change is invisible to the demo.
                 with suppress(traci.exceptions.TraCIException):
-                    traci.vehicle.moveTo(vid, f"{_EDGE_ID}_{lane}", new_pos)
+                    speed = traci.vehicle.getSpeed(vid)
+                    lane = traci.vehicle.getLaneIndex(vid)
+                    vtype = traci.vehicle.getTypeID(vid)
+                    new_pos = x - (_EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M)
+                    traci.vehicle.remove(vid)
+                    self._rush_ids.discard(vid)
+                    self._spawn_rush_vehicle(
+                        new_pos, speed=f"{speed:.2f}", lane=lane, vtype=vtype)
 
         # Backstop: only fires if the fleet genuinely shrank (e.g., a
         # background car was removed by a collision). One spawn per step,
@@ -517,11 +550,16 @@ class LaneIQEnv(gym.Env):
         # lap. Falls back to depart speed only if there's no prior state.
         prev = self._prev_reward_state
         target_speed = prev.speed if prev is not None else self._ego_depart_speed
+        # departLane="free" — SUMO picks the lane with the most room at
+        # the seam. Re-inserting at a fixed lane failed (episode ended
+        # with "exited") when that lane was occupied by background
+        # traffic at the seam. The loop only runs for rush, where any
+        # lane is fine.
         try:
             traci.vehicle.add(
                 vehID=_EGO_ID, routeID=_ROUTE_ID, typeID="ego",
                 depart="now",
-                departLane=str(self._ego_depart_lane),
+                departLane="free",
                 departSpeed=f"{target_speed:.2f}",
                 departPos="0.0",
             )
@@ -531,14 +569,10 @@ class LaneIQEnv(gym.Env):
             traci.simulationStep()
             if _EGO_ID in traci.vehicle.getIDList():
                 disable_sumo_lane_change(traci, _EGO_ID)
-                # Re-apply the rush ego tuning that the env set on the
-                # initial spawn — disable_sumo_lane_change above re-set
-                # the mode to 0, undoing our speed-gain enable.
+                # Re-apply the rush ego tuning — disable_sumo_lane_change
+                # above reset the LC mode to 0, undoing it.
                 if self._density == "rush":
-                    traci.vehicle.setTau(_EGO_ID, 0.4)
-                    traci.vehicle.setMinGap(_EGO_ID, 1.0)
-                    traci.vehicle.setAccel(_EGO_ID, 4.0)
-                    traci.vehicle.setLaneChangeMode(_EGO_ID, 1040)
+                    self._apply_rush_ego_tuning()
                 self._lap_count += 1
                 return True
         return False
