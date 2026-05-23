@@ -88,11 +88,21 @@ _RUSH_SPEED_LIMIT: float = 50.0
 # despawned once it has fallen far enough behind — so cars appear "from
 # the horizon" and recede naturally, never popping in/out on screen.
 _RUSH_EDGE_LENGTH_M: float = 10000.0      # rush road length (vs 1 km default)
-_RUSH_TARGET_TRAFFIC: int = 8             # cars kept in the band around the ego
+_RUSH_TARGET_TRAFFIC: int = 4             # cars kept in the band around the ego
 _RUSH_SPAWN_AHEAD_M: float = 320.0        # spawn this far ahead (just off-screen)
 _RUSH_DESPAWN_BEHIND_M: float = 320.0     # despawn once this far behind (off-screen)
-# 70/30 normal/slow — fewer slow vehicles means fewer hard speed walls.
+# 70/30 normal/slow for random scenery cars — fewer slow vehicles means
+# fewer hard speed walls.
 _RUSH_SLOW_FRACTION: float = 0.30
+# Fraction of refill spawns placed as a blocker in the ego's CURRENT lane
+# (the rest are random scenery). This is the weave forcer: the ego keeps
+# catching a car in its own lane and must dodge into a clear lane to pass.
+# The blocker is a "normal" (not "slow") car so the closing speed from the
+# ego's ~48 m/s is small enough that, if the ego is briefly boxed in, it can
+# brake without rear-ending. Bounded by _RUSH_TARGET_TRAFFIC. 0.5 balances a
+# steady supply of blockers against keeping the dodge lanes clear — higher
+# values box the ego in more often and reintroduce collisions.
+_RUSH_EGO_LANE_BIAS: float = 0.5
 
 # Hardcoded names for the 3-lane scenario. If we ever ship multi-edge
 # networks, lift these into the constructor.
@@ -429,10 +439,17 @@ class LaneIQEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _apply_rush_ego_tuning(self) -> None:
-        """Tune the ego's SUMO dynamics for the rush demo. Applied on the
-        initial spawn AND after every lap re-insertion (re-inserting +
-        disable_sumo_lane_change reset these to defaults). Scoped to the
-        episode's SUMO process."""
+        """Tune the ego's SUMO car-following dynamics for the rush demo.
+        Applied on the initial spawn. Scoped to the episode's SUMO process.
+
+        Note: this deliberately does NOT touch the lane-change mode, so the
+        `disable_sumo_lane_change(mode=0)` set in reset() stands and the
+        DRIVING AGENT is the sole lane-change decider (no autonomous SUMO
+        speed-gain). SUMO autonomous LC for a vehicle this much faster than
+        traffic is unreliable — it camps in the leftmost lane and rarely
+        overtakes. The `overtaker` baseline (the Aggressive preset's agent)
+        does the weaving explicitly, so the decision ticker reflects the
+        real maneuvers. See laneiq/agents/baselines/overtaker_agent.py."""
         # Krauss: fairly tight following + snappy accel so the ego holds
         # high speed except when a leader is close. tau=0.6 (not 0.4 —
         # 0.4 followed too close to brake in time and rear-ended slow
@@ -440,19 +457,21 @@ class LaneIQEnv(gym.Env):
         traci.vehicle.setTau(_EGO_ID, 0.6)
         traci.vehicle.setMinGap(_EGO_ID, 1.5)
         traci.vehicle.setAccel(_EGO_ID, 4.0)
-        # Re-enable SUMO's speed-gain lane-change motivation (TraCI
-        # override "do if safe" | speed-gain "do if safe"). The policy
-        # can still issue changeLane(); SUMO additionally picks faster
-        # lanes autonomously.
-        traci.vehicle.setLaneChangeMode(_EGO_ID, 1040)
-        # Mild speed-gain eagerness. Cranking lcSpeedGain/lcAssertive
-        # made the ego ride the leftmost (fastest) lane and rear-end slow
-        # cars it caught there (lane 2 is already "fastest" so speed-gain
-        # won't pull it out, and at 47 m/s it can't brake in time).
-        # Keep it modest; rely on a thinner fleet + safe tau instead.
-        with suppress(traci.exceptions.TraCIException):
-            traci.vehicle.setParameter(
-                _EGO_ID, "laneChangeModel.lcSpeedGain", "3.0")
+        # Strong braking as a collision safety net: at ~48 m/s the ego
+        # can't always dodge a blocker (adjacent lane occupied), so it must
+        # be able to scrub speed hard without rear-ending. Defaults
+        # (decel 4.5) are too weak for this speed gap.
+        traci.vehicle.setDecel(_EGO_ID, 7.5)
+        # Lane-change mode 1024 = no autonomous LC, but TraCI lane-change
+        # requests ARE safety-checked. Other scenarios use mode 0 (TraCI
+        # changes executed unchecked) and rely on the trained policy to
+        # never pick an unsafe change. The hand-coded `overtaker` has a
+        # blind spot — a car sitting exactly alongside in the target lane
+        # reads as neither a front nor a rear neighbour — so without the
+        # safety check it would occasionally change into it. With 1024,
+        # SUMO simply refuses an unsafe change (the ego holds its lane and
+        # brakes instead). This is the rush demo's collision backstop.
+        traci.vehicle.setLaneChangeMode(_EGO_ID, 1024)
 
     def _seed_rush_traffic(self) -> None:
         """Pre-populate the band around the ego at reset so it meets
@@ -465,11 +484,12 @@ class LaneIQEnv(gym.Env):
     def _spawn_rush_vehicle(
         self, spawn_x: float, speed: str = "desired",
         lane: int | None = None, vtype: str | None = None,
-    ) -> None:
+    ) -> str | None:
         """Add one managed background vehicle at absolute road position
         `spawn_x` (clipped inside the edges — no wrapping; the rush road is
-        a 10 km straight). Tracks the id in `_rush_ids`. Silent on
-        insertion failure (slot occupied → tried again next step)."""
+        a 10 km straight). Tracks the id in `_rush_ids` and returns it
+        (or None on insertion failure — slot occupied, tried again next
+        step)."""
         spawn_x = max(3.0, min(self._edge_length - 5.0, spawn_x))
         if vtype is None:
             vtype = "slow" if self.np_random.random() < _RUSH_SLOW_FRACTION else "normal"
@@ -477,22 +497,33 @@ class LaneIQEnv(gym.Env):
             lane = int(self.np_random.integers(0, 3))
         vid = f"rush_{self._spawn_count}"
         self._spawn_count += 1
-        with suppress(traci.exceptions.TraCIException):
+        try:
             traci.vehicle.add(
                 vehID=vid, routeID=_ROUTE_ID, typeID=vtype,
                 depart="now", departLane=str(lane),
                 departSpeed=speed, departPos=f"{spawn_x:.2f}",
             )
-            self._rush_ids.add(vid)
+        except traci.exceptions.TraCIException:
+            return None
+        self._rush_ids.add(vid)
+        return vid
 
     def _manage_rush_traffic(self) -> None:
         """Keep a band of background traffic around the ego on the 10 km
-        straight. Each step: (1) prune cars that genuinely left the sim
-        (collided/exited), (2) despawn cars that have fallen more than
-        `_RUSH_DESPAWN_BEHIND_M` behind the ego (it overtook them; they're
-        off-screen), (3) refill up to `_RUSH_TARGET_TRAFFIC` by spawning
-        fresh cars ~`_RUSH_SPAWN_AHEAD_M` ahead — just past the visible
-        window, so they emerge "from the horizon" rather than popping in.
+        straight, biased so the ego always has something to overtake. Each
+        step:
+
+        1. **Prune** cars that genuinely left the sim (collided/exited).
+        2. **Lock** newly-inserted cars to their spawn lane (no autonomous
+           LC) so blockers stay in the ego's lane and scenery stays put.
+        3. **Despawn** cars that have fallen more than
+           `_RUSH_DESPAWN_BEHIND_M` behind the ego (it overtook them).
+        4. **Refill** up to `_RUSH_TARGET_TRAFFIC`, spawning each car
+           `_RUSH_SPAWN_AHEAD_M` ahead (off-screen). A `_RUSH_EGO_LANE_BIAS`
+           share land in the ego's *current* lane as blockers; the rest are
+           random scenery. The ego repeatedly catches a blocker in its lane,
+           dodges into a clear lane, overtakes — what the `overtaker` agent
+           turns into a visible weave.
 
         No wrapping: cars enter ahead and recede behind, exactly as on a
         real highway. This replaces the old circular model whose lap seam
@@ -509,8 +540,20 @@ class LaneIQEnv(gym.Env):
         try:
             alive = set(traci.vehicle.getIDList())
             ego_x = traci.vehicle.getLanePosition(_EGO_ID)
+            ego_lane = traci.vehicle.getLaneIndex(_EGO_ID)
         except traci.exceptions.TraCIException:
             return
+
+        # Lock each newly-inserted background car to its spawn lane
+        # (setLaneChangeMode 0 = no autonomous LC). Otherwise SUMO's
+        # keep-right pulls the slow blocker out of the ego's lane before
+        # the ego ever reaches it, and scenery wanders unpredictably into
+        # the dodge lanes. Must be done after the car departs (a pending
+        # car isn't in `alive` yet), hence "newly confirmed".
+        newly_seen = (self._rush_ids & alive) - self._rush_seen
+        for vid in newly_seen:
+            with suppress(traci.exceptions.TraCIException):
+                traci.vehicle.setLaneChangeMode(vid, 0)
 
         # Confirm insertions, then prune only cars that were inserted and
         # have since vanished (collision/exit) — never pending ids.
@@ -531,14 +574,20 @@ class LaneIQEnv(gym.Env):
                 self._rush_ids.discard(vid)
                 self._rush_seen.discard(vid)
 
-        # Refill ahead. Stagger each new car so several added in one step
-        # don't stack on the same insertion slot. Only spawn if there's
-        # road left ahead (always true in practice on the 10 km straight).
+        # Refill ahead, staggered so several added in one step don't stack
+        # on the same insertion slot. A share of refills are placed as a
+        # blocker in the ego's CURRENT lane (the weave forcer); the rest are
+        # random scenery. Bounded by `_RUSH_TARGET_TRAFFIC` so the band
+        # never piles into an inescapable wall.
         deficit = _RUSH_TARGET_TRAFFIC - len(self._rush_ids)
         for i in range(max(0, deficit)):
             spawn_x = ego_x + _RUSH_SPAWN_AHEAD_M + i * 25 \
                 + self.np_random.random() * 40
-            if spawn_x < self._edge_length - 10.0:
+            if spawn_x >= self._edge_length - 10.0:
+                continue
+            if self.np_random.random() < _RUSH_EGO_LANE_BIAS:
+                self._spawn_rush_vehicle(spawn_x, lane=ego_lane, vtype="normal")
+            else:
                 self._spawn_rush_vehicle(spawn_x)
 
     def _reinsert_ego_for_lap(self) -> bool:

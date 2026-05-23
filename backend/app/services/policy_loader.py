@@ -7,7 +7,7 @@ policy instance.
 Naming convention (case-insensitive):
   - filename starts with 'dqn_'  → algorithm = "dqn", load via DQNAgent
   - filename starts with 'ppo_'  → algorithm = "ppo", load via PPOAgent
-  - special names {'random', 'greedy', 'safe_rule'} → builtin baselines
+  - special names {'random', 'greedy', 'safe_rule', 'overtaker'} → baselines
 
 If the conventions ever shift, swap the prefix table here.
 """
@@ -20,6 +20,7 @@ from typing import Literal
 from backend.app.schemas import RunListEntry
 from laneiq.agents.base import Policy
 from laneiq.agents.baselines.greedy_agent import GreedyAgent
+from laneiq.agents.baselines.overtaker_agent import OvertakerAgent
 from laneiq.agents.baselines.random_agent import RandomAgent
 from laneiq.agents.baselines.safe_rule_agent import SafeRuleAgent
 
@@ -31,6 +32,7 @@ _BASELINE_FACTORIES: dict[str, callable] = {
     "random": lambda: RandomAgent(seed=0),
     "greedy": GreedyAgent,
     "safe_rule": SafeRuleAgent,
+    "overtaker": OvertakerAgent,
 }
 
 AlgoT = Literal["dqn", "ppo"]

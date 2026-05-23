@@ -19,7 +19,14 @@ const AGENT_LABELS: Record<string, string> = {
   dqn_v3_mixed_200k: "DQN generalist — mixed-density training",
   dqn_v2_100k_huber: "DQN low-density specialist",
   mappo_v1_300k: "MAPPO multi-agent — trained vs 3 other egos",
+  overtaker: "Aggressive overtaker — rule-based weaver (rush)",
 };
+
+// Builtin rule-based agents. These live in the backend's baseline registry
+// (laneiq/agents/baselines), NOT in checkpoints/, so they don't appear in
+// the /runs response — we list them here so they show in the dropdown and
+// the quick-pick availability check passes.
+const BUILTIN_AGENTS: string[] = ["overtaker"];
 
 interface QuickPick {
   label: string;
@@ -39,17 +46,17 @@ const QUICK_PICKS: QuickPick[] = [
   },
   {
     label: "Aggressive",
-    agent: "ppo_v2_safety_heavy_150k",
+    agent: "overtaker",
     density: "rush",
     // 1800 steps ≈ 3 min sim. The rush road is a 10 km straight; at
     // ~45-50 m/s the ego covers ~9 km in 1800 steps, so the episode
     // truncates cleanly before reaching the end (no exit, no wrap).
     maxSteps: 1800,
     tooltip:
-      "Same disciplined PPO on the rush scenario: 50 m/s lane limit, " +
-      "slower traffic only. Ego cruises ~45 m/s — the fastest car on the " +
-      "road — overtaking slower vehicles on a 10 km straight. Runs ~3 min; " +
-      "tick the loop box for a continuous demo.",
+      "Rule-based overtaker on the rush scenario: 50 m/s lane limit, the " +
+      "ego is the fastest car on a 10 km straight and weaves around slower " +
+      "traffic — dip a lane to pass, climb back. Runs ~3 min; tick the " +
+      "loop box for a continuous demo.",
   },
   {
     label: "Multi-agent",
@@ -266,7 +273,9 @@ export function App() {
           quick pick
         </span>
         {QUICK_PICKS.map((qp) => {
-          const available = runs.some((r) => r.name === qp.agent);
+          const available =
+            BUILTIN_AGENTS.includes(qp.agent) ||
+            runs.some((r) => r.name === qp.agent);
           // Active iff BOTH agent and density match. Without the density
           // check, Conservative and Aggressive (both ppo_v2) would both
           // light up whenever ppo_v2 is the selected agent.
@@ -302,6 +311,11 @@ export function App() {
             onChange={(e) => setAgent(e.target.value)}
             disabled={streaming}
           >
+            {BUILTIN_AGENTS.map((name) => (
+              <option key={name} value={name}>
+                {AGENT_LABELS[name] ?? name}
+              </option>
+            ))}
             {runs.map((r) => (
               <option key={r.name} value={r.name}>
                 {AGENT_LABELS[r.name] ?? `${r.name} (${r.algorithm})`}
