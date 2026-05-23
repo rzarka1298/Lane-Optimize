@@ -81,15 +81,16 @@ _DENSITY_TO_ROUTES: dict[str, str] = {
 # fastest vehicle on the road.
 _RUSH_SPEED_LIMIT: float = 50.0
 
-# Rush scenario = a CIRCULAR world. A fixed fleet of background vehicles
-# loops the 1 km road forever: when one nears the end it's wrapped back
-# to the start (re-inserted near x=0 with its speed/lane preserved), so
-# it never exits and the ego repeatedly laps it. Combined with the
-# follow-camera (where x=1000 and x=0 render at the same screen
-# position), the wrap is visually seamless — no cars pop in or out of
-# the visible window. See _wrap_rush_traffic.
-_RUSH_TARGET_TRAFFIC: int = 6            # fleet size kept circulating
-_RUSH_WRAP_ZONE_M: float = 12.0          # wrap a car when within this of the end
+# Rush scenario runs on a dedicated 10 km straight road (no looping).
+# The ego drives ~3.5 min at ~45 m/s without reaching the end, so there
+# is no seam to wrap and no glitches. Background traffic is spawned
+# dynamically just ahead of the ego (off the visible camera window) and
+# despawned once it has fallen far enough behind — so cars appear "from
+# the horizon" and recede naturally, never popping in/out on screen.
+_RUSH_EDGE_LENGTH_M: float = 10000.0      # rush road length (vs 1 km default)
+_RUSH_TARGET_TRAFFIC: int = 8             # cars kept in the band around the ego
+_RUSH_SPAWN_AHEAD_M: float = 320.0        # spawn this far ahead (just off-screen)
+_RUSH_DESPAWN_BEHIND_M: float = 320.0     # despawn once this far behind (off-screen)
 # 70/30 normal/slow — fewer slow vehicles means fewer hard speed walls.
 _RUSH_SLOW_FRACTION: float = 0.30
 
@@ -155,6 +156,11 @@ class LaneIQEnv(gym.Env):
 
         self._scenario_path = scenario_path
         self._density: DensityT = density
+        # Road length for THIS scenario. The rush scenario uses a
+        # dedicated 10 km network so the ego can drive ~3.5 min without
+        # reaching the end — no looping/wrapping needed (that caused
+        # seam glitches). Every other scenario uses the 1 km road.
+        self._edge_length: float = _EDGE_LENGTH_M
 
         # The gauntlet scenario only works if the ego starts in lane 0
         # (behind the slow-vehicle wall). Force it regardless of the
@@ -168,8 +174,14 @@ class LaneIQEnv(gym.Env):
         # saturates — must match, or the policy gets no incentive to
         # exceed the old 36.11 limit. v_max is a scenario constant, not
         # a tuning knob, so override it regardless of what was passed.
+        # It also swaps to the 10 km network (unless the caller passed a
+        # custom scenario_path).
         if density == "rush":
             reward_config = replace(reward_config, v_max=_RUSH_SPEED_LIMIT)
+            self._edge_length = _RUSH_EDGE_LENGTH_M
+            if scenario_path == DEFAULT_SUMOCFG:
+                self._scenario_path = str(
+                    DEFAULT_SCENARIO_DIR / "highway_long.sumocfg")
         self._max_steps = max_steps
         self._warmup_steps = warmup_steps
         self._gui = gui
@@ -186,6 +198,7 @@ class LaneIQEnv(gym.Env):
         # Rush-mode circular traffic state (only used when density=="rush").
         self._spawn_count: int = 0
         self._rush_ids: set[str] = set()
+        self._rush_seen: set[str] = set()
 
         self.observation_space: gym.spaces.Box = OBSERVATION_SPEC.space
         self.action_space: gym.spaces.Discrete = ACTION_SPACE
@@ -279,12 +292,13 @@ class LaneIQEnv(gym.Env):
             self._apply_rush_ego_tuning()
             self._spawn_count = 0
             self._rush_ids = set()
+            self._rush_seen = set()
             self._seed_rush_traffic()
             # vehicle.add schedules insertion for the NEXT sim step, so
             # right now the fleet is still pending (only the ego is in
             # the sim). Settle a few steps so the fleet actually inserts
-            # before reset returns — otherwise the per-step backstop in
-            # _wrap_rush_traffic fires every tick during the ramp-up and
+            # before reset returns — otherwise the refill in
+            # _manage_rush_traffic fires every tick during the ramp-up and
             # massively over-spawns.
             for _ in range(15):
                 traci.simulationStep()
@@ -396,11 +410,11 @@ class LaneIQEnv(gym.Env):
         self._last_obs = obs
         self._prev_reward_state = nxt
 
-        # Rush mode: keep the background fleet circulating (wrap cars at
-        # the seam, top up to target). Runs only in the normal
-        # continuation path (lap-transition steps already advanced SUMO).
+        # Rush mode: keep a band of background traffic around the ego
+        # (despawn cars left behind, spawn fresh ones ahead). Runs only in
+        # the normal continuation path.
         if self._density == "rush":
-            self._wrap_rush_traffic()
+            self._manage_rush_traffic()
 
         truncated = self._step_count >= self._max_steps
         info: dict[str, Any] = {
@@ -411,7 +425,7 @@ class LaneIQEnv(gym.Env):
         return obs, float(reward), False, truncated, info
 
     # ------------------------------------------------------------------
-    # Rush-mode circular traffic (see _RUSH_* constants).
+    # Rush-mode dynamic traffic (see _RUSH_* constants).
     # ------------------------------------------------------------------
 
     def _apply_rush_ego_tuning(self) -> None:
@@ -441,22 +455,22 @@ class LaneIQEnv(gym.Env):
                 _EGO_ID, "laneChangeModel.lcSpeedGain", "3.0")
 
     def _seed_rush_traffic(self) -> None:
-        """Pre-populate a fleet distributed around the loop ahead of the
-        ego at reset, so the ego meets traffic throughout the lap."""
+        """Pre-populate the band around the ego at reset so it meets
+        traffic immediately. Spread from ~60 m to ~360 m ahead (covers the
+        visible window plus the just-off-screen spawn zone) with jitter."""
         for i in range(_RUSH_TARGET_TRAFFIC):
-            # Spread evenly from ~100 m to ~750 m ahead with jitter.
-            offset = 100 + (i + self.np_random.random()) * (650 / _RUSH_TARGET_TRAFFIC)
+            offset = 60 + (i + self.np_random.random()) * (300 / _RUSH_TARGET_TRAFFIC)
             self._spawn_rush_vehicle(offset)
 
     def _spawn_rush_vehicle(
         self, spawn_x: float, speed: str = "desired",
         lane: int | None = None, vtype: str | None = None,
     ) -> None:
-        """Add one managed background vehicle at `spawn_x` (wrapped to the
-        road, clipped inside the edges). Tracks the id in `_rush_ids`.
-        Silent on insertion failure (slot occupied → tried again later)."""
-        spawn_x = spawn_x % _EDGE_LENGTH_M
-        spawn_x = max(3.0, min(_EDGE_LENGTH_M - 5.0, spawn_x))
+        """Add one managed background vehicle at absolute road position
+        `spawn_x` (clipped inside the edges — no wrapping; the rush road is
+        a 10 km straight). Tracks the id in `_rush_ids`. Silent on
+        insertion failure (slot occupied → tried again next step)."""
+        spawn_x = max(3.0, min(self._edge_length - 5.0, spawn_x))
         if vtype is None:
             vtype = "slow" if self.np_random.random() < _RUSH_SLOW_FRACTION else "normal"
         if lane is None:
@@ -471,69 +485,61 @@ class LaneIQEnv(gym.Env):
             )
             self._rush_ids.add(vid)
 
-    def _wrap_rush_traffic(self) -> None:
-        """Keep the background fleet circulating. Each step: (1) drop ids
-        that have left the sim from our managed set, (2) wrap any car
-        within `_RUSH_WRAP_ZONE_M` of the road end back to the start
-        (preserving speed/lane/vtype) so it never exits, (3) top the
-        fleet back up to `_RUSH_TARGET_TRAFFIC` if any slipped through.
+    def _manage_rush_traffic(self) -> None:
+        """Keep a band of background traffic around the ego on the 10 km
+        straight. Each step: (1) prune cars that genuinely left the sim
+        (collided/exited), (2) despawn cars that have fallen more than
+        `_RUSH_DESPAWN_BEHIND_M` behind the ego (it overtook them; they're
+        off-screen), (3) refill up to `_RUSH_TARGET_TRAFFIC` by spawning
+        fresh cars ~`_RUSH_SPAWN_AHEAD_M` ahead — just past the visible
+        window, so they emerge "from the horizon" rather than popping in.
 
-        Why wrap rather than let SUMO exit + respawn: under the
-        follow-camera, x=1000 and x=0 render at the same screen position,
-        so re-inserting a near-the-end car at the start is visually
-        seamless — no pop-out. Background vehicles thus loop just like
-        the ego."""
+        No wrapping: cars enter ahead and recede behind, exactly as on a
+        real highway. This replaces the old circular model whose lap seam
+        produced glitches.
+
+        `traci.vehicle.add` only departs a car on the *next* sim step (and
+        later still if its slot is briefly blocked), so a just-spawned id
+        is in `_rush_ids` but not yet in `getIDList`. We must NOT treat
+        such pending ids as "gone" — doing so would refill against them
+        every step and over-spawn. `_rush_seen` records ids confirmed
+        inserted at least once; only a *seen* id missing from the sim has
+        truly left. The managed count for refill is `len(_rush_ids)`
+        (pending included), which keeps the fleet at target."""
         try:
             alive = set(traci.vehicle.getIDList())
             ego_x = traci.vehicle.getLanePosition(_EGO_ID)
-            ego_lane = traci.vehicle.getLaneIndex(_EGO_ID)
         except traci.exceptions.TraCIException:
             return
-        self._rush_ids &= alive
 
-        # Is the ego near the seam (about to wrap, or just wrapped)? If so,
-        # a car re-added at x≈0-12 must avoid the ego's lane or it lands
-        # in the freshly-wrapped ego's path → collision.
-        ego_near_seam = ego_x < 70 or ego_x > _EDGE_LENGTH_M - 70
-        for vid in list(self._rush_ids):
+        # Confirm insertions, then prune only cars that were inserted and
+        # have since vanished (collision/exit) — never pending ids.
+        self._rush_seen |= (self._rush_ids & alive)
+        gone = {v for v in self._rush_ids if v in self._rush_seen and v not in alive}
+        self._rush_ids -= gone
+        self._rush_seen -= gone
+
+        # Despawn cars the ego has left behind (off the back of the window).
+        for vid in list(self._rush_ids & alive):
             try:
                 x = traci.vehicle.getLanePosition(vid)
             except traci.exceptions.TraCIException:
                 continue
-            if x >= _EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M:
-                # Wrap by remove + re-add a FRESH vehicle near the seam.
-                # NOT moveTo: moveTo teleports the car ~988 m backward and
-                # SUMO then registers a phantom collision with that car's
-                # former follower (gaps of -900 m ended episodes). A
-                # re-added vehicle has no follower-gap history. Speed/lane
-                # preserved so motion stays continuous; the ID change is
-                # invisible. Wrapping ALWAYS (not skipping near the seam)
-                # avoids natural-exit pop-outs at the lap boundary.
+            if x < ego_x - _RUSH_DESPAWN_BEHIND_M:
                 with suppress(traci.exceptions.TraCIException):
-                    speed = traci.vehicle.getSpeed(vid)
-                    lane = traci.vehicle.getLaneIndex(vid)
-                    vtype = traci.vehicle.getTypeID(vid)
-                    # When the ego is at the seam, never re-add into its
-                    # lane (would collide). Shift to an adjacent lane.
-                    if ego_near_seam and lane == ego_lane:
-                        lane = (ego_lane + 1) % 3
-                    new_pos = x - (_EDGE_LENGTH_M - _RUSH_WRAP_ZONE_M)
                     traci.vehicle.remove(vid)
-                    self._rush_ids.discard(vid)
-                    self._spawn_rush_vehicle(
-                        new_pos, speed=f"{speed:.2f}", lane=lane, vtype=vtype)
+                self._rush_ids.discard(vid)
+                self._rush_seen.discard(vid)
 
-        # Backstop: only fires if the fleet genuinely shrank (e.g., a
-        # background car was removed by a collision). One spawn per step,
-        # opposite the ego (off-screen). Normal operation never triggers
-        # this — moveTo keeps the fleet intact.
-        bg_alive = sum(1 for v in alive if v != _EGO_ID)
-        if bg_alive < _RUSH_TARGET_TRAFFIC:
-            try:
-                ego_x = traci.vehicle.getLanePosition(_EGO_ID)
-            except traci.exceptions.TraCIException:
-                ego_x = 0.0
-            self._spawn_rush_vehicle(ego_x + 500)
+        # Refill ahead. Stagger each new car so several added in one step
+        # don't stack on the same insertion slot. Only spawn if there's
+        # road left ahead (always true in practice on the 10 km straight).
+        deficit = _RUSH_TARGET_TRAFFIC - len(self._rush_ids)
+        for i in range(max(0, deficit)):
+            spawn_x = ego_x + _RUSH_SPAWN_AHEAD_M + i * 25 \
+                + self.np_random.random() * 40
+            if spawn_x < self._edge_length - 10.0:
+                self._spawn_rush_vehicle(spawn_x)
 
     def _reinsert_ego_for_lap(self) -> bool:
         """Re-add the ego at x=0 to start a new lap. Returns True iff the

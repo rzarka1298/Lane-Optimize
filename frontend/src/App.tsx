@@ -41,12 +41,15 @@ const QUICK_PICKS: QuickPick[] = [
     label: "Aggressive",
     agent: "ppo_v2_safety_heavy_150k",
     density: "rush",
-    maxSteps: 3000,
+    // 1800 steps ≈ 3 min sim. The rush road is a 10 km straight; at
+    // ~45-50 m/s the ego covers ~9 km in 1800 steps, so the episode
+    // truncates cleanly before reaching the end (no exit, no wrap).
+    maxSteps: 1800,
     tooltip:
       "Same disciplined PPO on the rush scenario: 50 m/s lane limit, " +
-      "slower traffic only. Ego cruises ~40 m/s — the fastest car on the " +
-      "road — overtaking slower vehicles. Track LOOPS so the run lasts " +
-      "minutes; watch the lap counter.",
+      "slower traffic only. Ego cruises ~45 m/s — the fastest car on the " +
+      "road — overtaking slower vehicles on a 10 km straight. Runs ~3 min; " +
+      "tick the loop box for a continuous demo.",
   },
   {
     label: "Multi-agent",

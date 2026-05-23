@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 import type { SimTick, Vehicle, VType } from "../api/types";
 
 // World geometry — see Project-Documentation/sumo_scenarios/network.md.
-// The real road is 1000 m × ~9.6 m (3 lanes × 3.2 m). At true aspect ratio
-// (~104:1) lanes would be unreadable, so we exaggerate vertically.
-const ROAD_LENGTH_M = 1000;
+// Roads are 3 lanes × 3.2 m, straight: 1 km for most scenarios, 10 km for
+// rush. At true aspect ratio lanes would be unreadable, so we exaggerate
+// vertically. No scenario loops — the follow-camera scrolls a straight road.
 const N_LANES = 3;
 const LANE_WIDTH_M = 3.2;
 
@@ -14,8 +14,8 @@ const TICK_DURATION_MS = 100;
 
 // Follow-camera: show this much road centered on the ego (m). With this
 // the road feels infinite — the ego is always visible at center and the
-// world scrolls past. Critical for the looping rush demo (without it,
-// audiences see the 1 km road compress vehicles into 5 px specks).
+// world scrolls past. Without it, audiences see vehicles compressed into
+// a few-px specks on the full road.
 const WINDOW_M = 500;
 // Off-screen margin so vehicles entering the window don't pop in abruptly.
 const OFFSCREEN_MARGIN_M = 30;
@@ -102,22 +102,6 @@ interface RenderState {
   lastTickArrivedAt: number | null;
 }
 
-// Wrap-aware signed offset for the 1 km looping road. Returns the shortest
-// signed distance from a to b. Used both for ego-position lerping across
-// the loop wrap and for placing other vehicles relative to the ego.
-function loopOffset(delta: number): number {
-  const half = ROAD_LENGTH_M / 2;
-  if (delta > half) return delta - ROAD_LENGTH_M;
-  if (delta < -half) return delta + ROAD_LENGTH_M;
-  return delta;
-}
-
-function wrap(x: number): number {
-  let r = x % ROAD_LENGTH_M;
-  if (r < 0) r += ROAD_LENGTH_M;
-  return r;
-}
-
 function drawFrame(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -169,18 +153,10 @@ function drawFrame(
   if (!ego) return;
   const prevEgo = state.prevTick?.vehicles.find((v) => v.is_ego);
 
-  // Camera center = ego's lerped world x. Wrap-aware lerp: on loop
-  // transition, snap to the new position so the camera doesn't pan
-  // backward across the entire road.
+  // Camera center = ego's lerped world x. Straight road, so a plain lerp.
   let cameraX = ego.x;
   if (prevEgo) {
-    const dx = loopOffset(ego.x - prevEgo.x);
-    if (Math.abs(ego.x - prevEgo.x) > ROAD_LENGTH_M / 2) {
-      // ego wrapped — snap to current rather than lerping through the loop
-      cameraX = ego.x;
-    } else {
-      cameraX = wrap(prevEgo.x + dx * progress);
-    }
+    cameraX = prevEgo.x + (ego.x - prevEgo.x) * progress;
   }
 
   // px per meter under the follow-camera transform.
@@ -197,17 +173,16 @@ function drawFrame(
   // Start a bit behind the leftmost visible meter, rounded down to 100m.
   const leftWorld = cameraX - halfWindow - OFFSCREEN_MARGIN_M;
   const rightWorld = cameraX + halfWindow + OFFSCREEN_MARGIN_M;
-  const firstGrid = Math.floor(leftWorld / 100) * 100;
+  const firstGrid = Math.max(0, Math.floor(leftWorld / 100) * 100);
   for (let m = firstGrid; m <= rightWorld + 100; m += 100) {
-    const labelM = wrap(m); // 0..999 — repeats every km because of the loop
-    const rel = loopOffset(wrap(m) - cameraX);
+    const rel = m - cameraX;
     if (Math.abs(rel) > halfWindow + OFFSCREEN_MARGIN_M) continue;
     const screenX = w / 2 + rel * xScale;
     ctx.beginPath();
     ctx.moveTo(screenX, 0);
     ctx.lineTo(screenX, h);
     ctx.stroke();
-    ctx.fillText(`${labelM}m`, screenX + 2, 2);
+    ctx.fillText(`${m}m`, screenX + 2, 2);
   }
 
   // Vehicles. Build prev-by-id once.
@@ -223,16 +198,10 @@ function drawFrame(
 
   for (const v of sorted) {
     const prev = prevById.get(v.id);
-    // Per-vehicle wrap detect (only the ego ever wraps in current envs,
-    // but be defensive — other future scenarios may loop background
-    // traffic too).
-    const wrapped = prev && Math.abs(v.x - prev.x) > ROAD_LENGTH_M / 2;
-    const vx =
-      prev && !wrapped ? prev.x + (v.x - prev.x) * progress : v.x;
-    const vy =
-      prev && !wrapped ? prev.y + (v.y - prev.y) * progress : v.y;
+    const vx = prev ? prev.x + (v.x - prev.x) * progress : v.x;
+    const vy = prev ? prev.y + (v.y - prev.y) * progress : v.y;
 
-    const rel = loopOffset(vx - cameraX);
+    const rel = vx - cameraX;
     if (Math.abs(rel) > halfWindow + OFFSCREEN_MARGIN_M) continue;
 
     const screenX = w / 2 + rel * xScale;
@@ -274,12 +243,4 @@ function drawFrame(
   ctx.textAlign = "right";
   ctx.fillText(`road pos: ${cameraX.toFixed(0)}m`, w - 10, 10);
   ctx.textAlign = "start";
-
-  if (state.lastTick.lap_count > 0) {
-    ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-    ctx.fillRect(6, 6, 86, 18);
-    ctx.fillStyle = "#facc15";
-    ctx.font = "bold 11px ui-monospace, monospace";
-    ctx.fillText(`LAP ${state.lastTick.lap_count}`, 14, 10);
-  }
 }

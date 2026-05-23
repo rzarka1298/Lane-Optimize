@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Single edge: 3 lanes, 10 km, 36.11 m/s base limit (the rush env raises
+  it to 50 m/s at runtime via setMaxSpeed, same as on the 1 km road).
+  Lane indices: 0 = rightmost (slow), 2 = leftmost (fast).
+-->
+<edges xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/edges_file.xsd">
+    <edge id="e1" from="start" to="end" numLanes="3" speed="36.11"/>
+</edges>

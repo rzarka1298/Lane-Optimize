@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Long highway nodes — two endpoints, 10 km apart. Used ONLY by the
+  rush scenario (highway_long.sumocfg). A 10 km straight lets the ego
+  drive ~3.5 minutes at ~45 m/s without ever reaching the end during a
+  demo, so the rush demo needs no looping/wrapping (which caused
+  seam glitches). The 1 km network (highway.nod.xml) is unchanged and
+  still used by every other scenario + the eval matrix.
+-->
+<nodes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/nodes_file.xsd">
+    <node id="start" x="0.0"     y="0.0" type="dead_end"/>
+    <node id="end"   x="10000.0" y="0.0" type="dead_end"/>
+</nodes>

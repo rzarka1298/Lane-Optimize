@@ -100,11 +100,11 @@ class SimulatorService:
                 max_steps=max_steps,
                 warmup_steps=50,
                 seed=seed,
-                # The rush scenario auto-loops in the live demo: when the
-                # ego reaches the end of the road, it's re-inserted at
-                # x=0 so the demo runs minutes, not ~25 s. Eval doesn't
-                # set this (single-lap consistency with other agents).
-                loop=(density == "rush"),
+                # No looping: the rush scenario now runs on a dedicated
+                # 10 km straight road (selected inside LaneIQEnv when
+                # density=="rush"), long enough that the ego drives for
+                # minutes without reaching the end — so no lap re-insert
+                # and none of the seam glitches the loop produced.
             )
             run_id = uuid.uuid4().hex[:8]
             run = _ActiveRun(
