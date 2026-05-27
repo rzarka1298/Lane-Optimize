@@ -18,7 +18,9 @@ const AGENT_LABELS: Record<string, string> = {
     "PPO gauntlet — escapes the slow lane (use with Gauntlet density)",
   dqn_v3_mixed_200k: "DQN generalist — mixed-density training",
   dqn_v2_100k_huber: "DQN low-density specialist",
-  mappo_v1_300k: "MAPPO multi-agent — trained vs 3 other egos",
+  mappo_v1_300k: "MAPPO multi-agent — independent rewards (v1, baseline)",
+  mappo_v2_coop_300k:
+    "MAPPO cooperative — shared-speed bonus 0.1 (0% medium-density collisions)",
   overtaker: "Aggressive overtaker — rule-based weaver (rush)",
 };
 
@@ -60,10 +62,13 @@ const QUICK_PICKS: QuickPick[] = [
   },
   {
     label: "Multi-agent",
-    agent: "mappo_v1_300k",
+    agent: "mappo_v2_coop_300k",
     density: "medium",
     tooltip:
-      "Parameter-sharing PPO trained against 3 other egos competing for space.",
+      "Parameter-sharing PPO trained with a cooperative shared-speed bonus " +
+      "(shared_speed_bonus=0.1): each ego rewards the team's mean speed, so " +
+      "yielding pays off. At medium density: 0% per-ego collisions (vs 20% " +
+      "for the independent-reward v1) and 5x less lane-thrashing.",
   },
   {
     label: "Gauntlet",
