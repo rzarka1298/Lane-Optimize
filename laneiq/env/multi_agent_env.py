@@ -44,7 +44,7 @@ from pettingzoo import ParallelEnv
 from laneiq.env.actions import (
     ACTION_SPACE,
     DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
-    EGO_LC_MODE_UNCHECKED,
+    EGO_LC_MODE_SAFETY_CHECKED,
     LaneChangeCooldown,
     apply_action,
     disable_sumo_lane_change,
@@ -129,7 +129,7 @@ class LaneIQParallelEnv(ParallelEnv):
         depart_lanes: tuple[int, ...] | None = None,
         depart_speed_mps: float = 18.0,
         lane_change_cooldown_steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
-        ego_lane_change_mode: int = EGO_LC_MODE_UNCHECKED,
+        ego_lane_change_mode: int = EGO_LC_MODE_SAFETY_CHECKED,
     ) -> None:
         if density not in _DENSITY_TO_ROUTES:
             raise ValueError(

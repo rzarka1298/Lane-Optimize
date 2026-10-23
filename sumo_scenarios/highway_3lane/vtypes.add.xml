@@ -47,9 +47,14 @@
          scenarios (so it has no effect there — the ego still caps at the
          road limit). It only becomes reachable in the `rush` scenario,
          which raises the lane limit to 50, making the ego uniquely the
-         fastest vehicle on the road. -->
+         fastest vehicle on the road.
+         speedFactor="1" speedDev="0" pins the ego's desired speed to the
+         lane limit. Without it SUMO samples a factor per vehicle (seen
+         1.11-1.43), so the ego's top speed varied by seed (up to 50 m/s on
+         a 36.11 road) and "fastest driver" comparisons were partly a draw. -->
     <vType id="ego" vClass="passenger"
-           maxSpeed="50.0" accel="2.5" decel="4.5" emergencyDecel="9.0"
+           maxSpeed="50.0" speedFactor="1" speedDev="0"
+           accel="2.5" decel="4.5" emergencyDecel="9.0"
            sigma="0.0" tau="1.0" minGap="2.0" length="4.5"
            color="255,215,0" guiShape="passenger/sedan"/>
 

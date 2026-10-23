@@ -36,7 +36,7 @@ import traci
 from laneiq.env.actions import (
     ACTION_SPACE,
     DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
-    EGO_LC_MODE_UNCHECKED,
+    EGO_LC_MODE_SAFETY_CHECKED,
     Action,
     LaneChangeCooldown,
     apply_action,
@@ -160,7 +160,7 @@ class LaneIQEnv(gym.Env):
         reward_config: RewardConfig = DEFAULT_REWARD_CONFIG,
         loop: bool = False,
         lane_change_cooldown_steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
-        ego_lane_change_mode: int = EGO_LC_MODE_UNCHECKED,
+        ego_lane_change_mode: int = EGO_LC_MODE_SAFETY_CHECKED,
     ) -> None:
         """Construct the env. Does NOT start SUMO; that happens in `reset()`."""
         super().__init__()
@@ -210,9 +210,11 @@ class LaneIQEnv(gym.Env):
         # Min dwell between executed ego lane changes; also masks obs[23]
         # while active. 0 = off (pre-2026-10 dynamics). See actions.py.
         self._cooldown = LaneChangeCooldown(lane_change_cooldown_steps)
-        # SUMO lane-change mode for the ego: 0 = requests executed unchecked
-        # (policy is sole decider); 768 = SUMO refuses unsafe requests.
-        # See actions.EGO_LC_MODE_*.
+        # SUMO lane-change mode for the ego. Default 768: SUMO refuses a
+        # requested change that would cut into another car (a lane-change
+        # assist); the policy still decides when and where to change.
+        # 0 = unchecked, the pre-2026-10-23 behaviour every earlier
+        # checkpoint was trained under. See actions.EGO_LC_MODE_*.
         self._ego_lc_mode = ego_lane_change_mode
         # Lap count is incremented every time the ego completes the 1km
         # road and is re-inserted at x=0 (loop mode only). Episode runs
