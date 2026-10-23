@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SimTick, StreamFrame } from "./types";
 import { WS_URL } from "./client";
+import { TickBuffer } from "./tickBuffer";
 
 export type ConnectionStatus =
   | "idle"
@@ -11,18 +12,22 @@ export type ConnectionStatus =
 
 export interface SimStreamState {
   status: ConnectionStatus;
-  // prevTick + lastTick + lastTickArrivedAt let consumers interpolate
-  // smoothly between the 10 Hz frames the backend sends.
-  prevTick: SimTick | null;
+  // Every tick, pushed the moment it arrives. Stable object for the hook's
+  // lifetime — HighwayCanvas reads it from its rAF loop (see tickBuffer.ts).
+  buffer: TickBuffer;
+  // lastTick + history are React state, committed at most every
+  // COMMIT_INTERVAL_MS (sooner on episode end or action change). They feed
+  // the panels, never the canvas.
   lastTick: SimTick | null;
-  // performance.now() timestamp of when lastTick arrived. null if no ticks yet.
-  lastTickArrivedAt: number | null;
   history: SimTick[];
   // Last control-frame message (started/stopped/error envelope text).
   lastMessage: string | null;
 }
 
 const HISTORY_LIMIT = 600; // 60 sec at 10 Hz; rolling buffer for charts.
+// ~4 Hz. Re-rendering App + two Recharts charts at the full 10 Hz tick rate
+// competed with the canvas for the main thread and caused dropped frames.
+const COMMIT_INTERVAL_MS = 250;
 
 // Hook lifecycle:
 //   enabled=false → socket stays closed, status="idle"
@@ -31,19 +36,32 @@ const HISTORY_LIMIT = 600; // 60 sec at 10 Hz; rolling buffer for charts.
 // The caller is responsible for calling api.startSim() before flipping
 // enabled to true — this hook only consumes the stream.
 export function useSimStream(enabled: boolean): SimStreamState {
+  const bufferRef = useRef<TickBuffer>(new TickBuffer());
   const [state, setState] = useState<SimStreamState>({
     status: "idle",
-    prevTick: null,
+    buffer: bufferRef.current,
     lastTick: null,
-    lastTickArrivedAt: null,
     history: [],
     lastMessage: null,
   });
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number | null>(null);
   const attemptRef = useRef(0);
+  // Uncommitted tick state + throttle bookkeeping (see COMMIT_INTERVAL_MS).
+  const historyRef = useRef<SimTick[]>([]);
+  const pendingTickRef = useRef<SimTick | null>(null);
+  const committedActionRef = useRef<string | null>(null);
+  const commitTimerRef = useRef<number | null>(null);
+  const lastCommitAtRef = useRef(0);
 
   useEffect(() => {
+    const cancelCommit = () => {
+      if (commitTimerRef.current !== null) {
+        window.clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+    };
+
     if (!enabled) {
       wsRef.current?.close();
       wsRef.current = null;
@@ -51,12 +69,16 @@ export function useSimStream(enabled: boolean): SimStreamState {
         window.clearTimeout(retryRef.current);
         retryRef.current = null;
       }
+      cancelCommit();
       attemptRef.current = 0;
+      bufferRef.current.clear();
+      historyRef.current = [];
+      pendingTickRef.current = null;
+      committedActionRef.current = null;
       setState({
         status: "idle",
-        prevTick: null,
+        buffer: bufferRef.current,
         lastTick: null,
-        lastTickArrivedAt: null,
         history: [],
         lastMessage: null,
       });
@@ -64,6 +86,16 @@ export function useSimStream(enabled: boolean): SimStreamState {
     }
 
     let cancelled = false;
+
+    const commit = () => {
+      cancelCommit();
+      if (cancelled) return;
+      lastCommitAtRef.current = performance.now();
+      const tick = pendingTickRef.current;
+      committedActionRef.current = tick?.decision?.action ?? null;
+      const history = historyRef.current.slice();
+      setState((s) => ({ ...s, lastTick: tick, history }));
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -85,18 +117,30 @@ export function useSimStream(enabled: boolean): SimStreamState {
         }
         if (frame.type === "tick" && frame.tick) {
           const tick = frame.tick;
-          const arrivedAt = performance.now();
-          setState((s) => {
-            const next = [...s.history, tick];
-            if (next.length > HISTORY_LIMIT) next.shift();
-            return {
-              ...s,
-              prevTick: s.lastTick,
-              lastTick: tick,
-              lastTickArrivedAt: arrivedAt,
-              history: next,
-            };
-          });
+          const now = performance.now();
+          bufferRef.current.push(tick, now);
+          // A new episode on the same socket (t restarted) drops old history.
+          const prev = historyRef.current[historyRef.current.length - 1];
+          if (prev && tick.t <= prev.t) historyRef.current = [];
+          historyRef.current.push(tick);
+          if (historyRef.current.length > HISTORY_LIMIT) {
+            historyRef.current.shift();
+          }
+          pendingTickRef.current = tick;
+
+          // Commit now if something the user must see promptly happened:
+          // the episode ended (App's loop-restart watches lastTick) or the
+          // AI's action changed (DecisionTicker). Otherwise throttle.
+          const urgent =
+            tick.terminated ||
+            tick.truncated ||
+            (tick.decision?.action ?? null) !== committedActionRef.current;
+          const wait = COMMIT_INTERVAL_MS - (now - lastCommitAtRef.current);
+          if (urgent || wait <= 0) {
+            commit();
+          } else if (commitTimerRef.current === null) {
+            commitTimerRef.current = window.setTimeout(commit, wait);
+          }
         } else if (frame.message) {
           setState((s) => ({ ...s, lastMessage: frame.message ?? null }));
         }
@@ -125,6 +169,7 @@ export function useSimStream(enabled: boolean): SimStreamState {
 
     return () => {
       cancelled = true;
+      cancelCommit();
       if (retryRef.current !== null) {
         window.clearTimeout(retryRef.current);
         retryRef.current = null;

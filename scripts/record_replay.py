@@ -9,7 +9,7 @@ byte-identical). The backend can play these back via
 Usage:
 
     uv run python -m scripts.record_replay \
-        --agent ppo_v2_safety_heavy_150k \
+        --agent ppo_v12_safety_cd_150k \
         --density medium --seed 42 \
         --out results/replays/ppo_medium_seed42.json
 """
@@ -28,7 +28,7 @@ from laneiq.env.highway_env import LaneIQEnv
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--agent", required=True,
-                        help="checkpoint stem (e.g., ppo_v2_safety_heavy_150k) "
+                        help="checkpoint stem (e.g., ppo_v12_safety_cd_150k) "
                              "or baseline name (random/greedy/safe_rule)")
     parser.add_argument("--density",
                         choices=("low", "medium", "high", "gauntlet", "rush"),

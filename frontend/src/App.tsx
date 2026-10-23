@@ -9,18 +9,24 @@ import { MetricsPanel } from "./components/MetricsPanel";
 // Recruiter-facing labels for the canonical agents. Kept in the frontend
 // (not in the backend's /runs response) because they're a presentation
 // concern: which trade-off this checkpoint embodies.
+// Numbers: 20-seed evals in the current env (fixed side-lane obs +
+// 1.5 s lane-change cooldown). Checkpoints marked "pre-fix" were trained on
+// mirrored side-lane observations (LESSONS #18) and kept for comparison.
 const AGENT_LABELS: Record<string, string> = {
-  ppo_v2_safety_heavy_150k:
-    "PPO conservative — 0% collisions everywhere (canonical)",
-  ppo_v1_mixed_500k:
-    "PPO aggressive — active lane-changer (15% high-density col)",
-  ppo_v5_gauntlet_300k:
+  ppo_v12_safety_cd_150k:
+    "PPO canonical — safety reward + lane-change cooldown",
+  ppo_v10_gauntlet_cd_300k:
     "PPO gauntlet — escapes the slow lane (use with Gauntlet density)",
-  dqn_v3_mixed_200k: "DQN generalist — mixed-density training",
-  dqn_v2_100k_huber: "DQN low-density specialist",
-  mappo_v1_300k: "MAPPO multi-agent — independent rewards (v1, baseline)",
-  mappo_v2_coop_300k:
-    "MAPPO cooperative — shared-speed bonus 0.1 (collisions halved vs v1)",
+  mappo_v3_coop_cd_300k:
+    "MAPPO cooperative — shared-speed bonus 0.1 + cooldown",
+  dqn_v4_mixed_200k_obsfix: "DQN generalist — mixed-density training",
+  ppo_v2_safety_heavy_150k: "PPO conservative (pre-fix)",
+  ppo_v1_mixed_500k: "PPO aggressive (pre-fix)",
+  ppo_v5_gauntlet_300k: "PPO gauntlet (pre-fix)",
+  dqn_v3_mixed_200k: "DQN generalist (pre-fix)",
+  dqn_v2_100k_huber: "DQN low-density specialist (pre-fix)",
+  mappo_v1_300k: "MAPPO independent rewards (pre-fix)",
+  mappo_v2_coop_300k: "MAPPO cooperative (pre-fix)",
   overtaker: "Aggressive overtaker — rule-based weaver (rush)",
 };
 
@@ -41,10 +47,11 @@ interface QuickPick {
 const QUICK_PICKS: QuickPick[] = [
   {
     label: "Conservative",
-    agent: "ppo_v2_safety_heavy_150k",
+    agent: "ppo_v12_safety_cd_150k",
     density: "medium",
     tooltip:
-      "Safety-tuned PPO at medium density. Stays in lane, 0% collisions everywhere.",
+      "Safety-tuned PPO at medium density with a 1.5 s lane-change " +
+      "cooldown. Changes lanes only when it pays (~2 per minute median).",
   },
   {
     label: "Aggressive",
@@ -57,26 +64,27 @@ const QUICK_PICKS: QuickPick[] = [
     tooltip:
       "Rule-based overtaker on the rush scenario: 50 m/s lane limit, the " +
       "ego is the fastest car on a 10 km straight and weaves around slower " +
-      "traffic — dip a lane to pass, climb back. Runs ~3 min; tick the " +
-      "loop box for a continuous demo.",
+      "traffic — passes on either side, climbs back once the lane is open. " +
+      "~45 m/s average vs 33 m/s traffic. Runs ~3 min; tick the loop box " +
+      "for a continuous demo.",
   },
   {
     label: "Multi-agent",
-    agent: "mappo_v2_coop_300k",
+    agent: "mappo_v3_coop_cd_300k",
     density: "medium",
     tooltip:
-      "Parameter-sharing PPO trained with a cooperative shared-speed bonus " +
-      "(shared_speed_bonus=0.1): each ego rewards the team's mean speed, so " +
-      "yielding pays off. Over a 20-seed eval, per-ego collisions halved vs " +
-      "the independent-reward v1 (8.3% to 4.2%), improving at every density.",
+      "Parameter-sharing PPO, 4 egos, trained with a cooperative " +
+      "shared-speed bonus (0.1): each ego is rewarded for the team's mean " +
+      "speed, so yielding pays off. 6% per-ego collisions at medium " +
+      "density over a 20-seed eval.",
   },
   {
     label: "Gauntlet",
-    agent: "ppo_v5_gauntlet_300k",
+    agent: "ppo_v10_gauntlet_cd_300k",
     density: "gauntlet",
     tooltip:
       "Trained on the gauntlet scenario — starts stuck in the slow lane and " +
-      "weaves out. 32.7 m/s vs 24.8 for an untrained agent.",
+      "weaves out. 33.1 m/s vs 24.8 for an agent that never leaves it.",
   },
 ];
 
@@ -123,7 +131,7 @@ export function App() {
       } else if (rs.length > 0 && rs[0]) {
         // Default to the canonical PPO if it's available, else first entry.
         const canonical = rs.find(
-          (r) => r.name === "ppo_v2_safety_heavy_150k",
+          (r) => r.name === "ppo_v12_safety_cd_150k",
         );
         setAgent(canonical?.name ?? rs[0].name);
       } else {
@@ -445,11 +453,7 @@ export function App() {
         simTimeS={tick?.t ?? null}
       />
 
-      <HighwayCanvas
-        prevTick={stream.prevTick}
-        lastTick={stream.lastTick}
-        lastTickArrivedAt={stream.lastTickArrivedAt}
-      />
+      <HighwayCanvas buffer={stream.buffer} hasTick={stream.lastTick !== null} />
 
       <MetricsPanel history={stream.history} lastTick={stream.lastTick} />
 
