@@ -9,8 +9,8 @@ import { MetricsPanel } from "./components/MetricsPanel";
 // Recruiter-facing labels for the canonical agents. Kept in the frontend
 // (not in the backend's /runs response) because they're a presentation
 // concern: which trade-off this checkpoint embodies.
-// Numbers: 20-seed evals in the current env (fixed side-lane obs +
-// 1.5 s lane-change cooldown). Checkpoints marked "pre-fix" were trained on
+// Numbers: 20-seed evals in the current env (fixed side-lane obs, 1.5 s
+// lane-change cooldown, safety-checked lane changes, ego speed pinned). Checkpoints marked "pre-fix" were trained on
 // mirrored side-lane observations (LESSONS #18) and kept for comparison.
 const AGENT_LABELS: Record<string, string> = {
   ppo_v12_safety_cd_150k:
@@ -50,8 +50,9 @@ const QUICK_PICKS: QuickPick[] = [
     agent: "ppo_v12_safety_cd_150k",
     density: "medium",
     tooltip:
-      "Safety-tuned PPO at medium density with a 1.5 s lane-change " +
-      "cooldown. Changes lanes only when it pays (~2 per minute median).",
+      "Safety-tuned PPO at medium density. Picks its lane changes (~3 per " +
+      "minute); SUMO's lane-change assist refuses any unsafe one. 0% " +
+      "collisions, fastest PPO finish on high density (30.6 s / km).",
   },
   {
     label: "Aggressive",
@@ -65,7 +66,7 @@ const QUICK_PICKS: QuickPick[] = [
       "Rule-based overtaker on the rush scenario: 50 m/s lane limit, the " +
       "ego is the fastest car on a 10 km straight and weaves around slower " +
       "traffic — passes on either side, climbs back once the lane is open. " +
-      "~45 m/s average vs 33 m/s traffic. Runs ~3 min; tick the loop box " +
+      "~42 m/s average vs 33 m/s traffic. Runs ~3 min; tick the loop box " +
       "for a continuous demo.",
   },
   {
@@ -75,7 +76,7 @@ const QUICK_PICKS: QuickPick[] = [
     tooltip:
       "Parameter-sharing PPO, 4 egos, trained with a cooperative " +
       "shared-speed bonus (0.1): each ego is rewarded for the team's mean " +
-      "speed, so yielding pays off. 6% per-ego collisions at medium " +
+      "speed, so yielding pays off. 0% per-ego collisions at every " +
       "density over a 20-seed eval.",
   },
   {
@@ -84,7 +85,7 @@ const QUICK_PICKS: QuickPick[] = [
     density: "gauntlet",
     tooltip:
       "Trained on the gauntlet scenario — starts stuck in the slow lane and " +
-      "weaves out. 33.1 m/s vs 24.8 for an agent that never leaves it.",
+      "weaves out. 32.9 m/s mean, 0% collisions over a 20-seed eval.",
   },
 ];
 

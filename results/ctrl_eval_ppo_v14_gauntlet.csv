@@ -1,0 +1,2 @@
+agent,density,n_seeds,mean_speed_mps_mean,mean_speed_mps_std,return_total_mean,return_total_std,collision_rate,reached_end_rate,lane_changes_per_min_mean,lane_changes_per_min_std,jerk_rms_mean,jerk_rms_std,near_miss_rate_mean,near_miss_rate_std,episode_length_s_mean
+ppo,gauntlet,20,31.16673859740762,3.0318207912064628,210.83241429549412,70.74671579720093,0.0,1.0,2.427289408110989,1.73483931191367,0.6836177240347625,0.5622406001238062,0.3491943910053911,0.38231762660108237,32.370000000000005
