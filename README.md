@@ -7,10 +7,11 @@
   HERO GIF — drop the recording here.
   Record the 30-second cut from docs/demo_storyboard.md, export to
   docs/images/demo.gif (keep it under ~8 MB, ~12 fps), and the line
-  below will render it. Until then it shows a broken-image placeholder
-  — that's expected pre-recording.
--->
+  below will render it. It stays commented out until the file exists,
+  so GitHub never shows a broken image.
+
 ![LaneIQ live demo](docs/images/demo.gif)
+-->
 
 End-to-end reinforcement learning for highway lane optimization in
 [SUMO](https://eclipse.dev/sumo/), with a live React + FastAPI
