@@ -83,11 +83,14 @@ def _make_mock_traci(
     # Side neighbors keyed by (target_lane, slot). We pre-compute the four
     # SUMO modes the builder will call so getNeighbors returns the right
     # tuple per mode.
+    # Mode values per TraCI: getLeftLeaders=2, getRightLeaders=3 (bit0 =
+    # right). Mirrors real TraCI, NOT the builder's table — the ground-truth
+    # SUMO test below guards against this mock drifting with a builder bug.
     mode_to_target = {
-        0b011: (ego_lane + 1, "front"),  # left-leader
-        0b001: (ego_lane + 1, "rear"),   # left-follower
-        0b010: (ego_lane - 1, "front"),  # right-leader
-        0b000: (ego_lane - 1, "rear"),   # right-follower
+        0b010: (ego_lane + 1, "front"),  # left-leader
+        0b000: (ego_lane + 1, "rear"),   # left-follower
+        0b011: (ego_lane - 1, "front"),  # right-leader
+        0b001: (ego_lane - 1, "rear"),   # right-follower
     }
     mode_results: dict[int, tuple[tuple[str, float], ...]] = {m: () for m in mode_to_target}
     for mode, (tlane, tslot) in mode_to_target.items():
@@ -336,3 +339,51 @@ def test_observation_against_running_sumo() -> None:
         actual_lane = traci.vehicle.getLaneIndex("ego_test")
         expected_dim1 = max(0, min(2, actual_lane)) / 2.0
         assert obs[1] == pytest.approx(expected_dim1, abs=1e-6)
+
+
+@pytest.mark.slow
+@pytest.mark.sumo
+@pytest.mark.parametrize(
+    "ego_lane,placed,expect_filled,expect_empty",
+    [
+        # Middle lane: one car front-left (lane 2), one rear-right (lane 0).
+        (1, [(2, +30.0), (0, -30.0)], [(2, 0), (0, 1)], [(2, 1), (0, 0)]),
+        # Outer lane: the adjacent lane must be queried at all.
+        (0, [(1, +30.0)], [(1, 0)], [(1, 1), (2, 0), (2, 1)]),
+    ],
+)
+def test_side_slots_match_true_lanes_in_sumo(
+    ego_lane: int,
+    placed: list[tuple[int, float]],
+    expect_filled: list[tuple[int, int]],
+    expect_empty: list[tuple[int, int]],
+) -> None:
+    """Ground truth for the side-lane slots: cars placed in known lanes must
+    land in those lanes' slots. Guards the getNeighbors mode table against
+    TraCI itself rather than a mock that could share its mistake."""
+    import traci
+
+    from laneiq.env.sumo_runtime import sumo_session
+
+    ego_x = 500.0  # far from the x=0 insertion point of background traffic
+    with sumo_session(seed=42, end_time=60.0):
+        traci.vehicle.add("ego_test", "r_through", typeID="ego", depart="now",
+                          departLane=str(ego_lane), departPos=f"{ego_x}",
+                          departSpeed="20.0")
+        for i, (lane, dx) in enumerate(placed):
+            traci.vehicle.add(f"n{i}", "r_through", typeID="slow", depart="now",
+                              departLane=str(lane), departPos=f"{ego_x + dx}",
+                              departSpeed="20.0")
+        for vid in ["ego_test"] + [f"n{i}" for i in range(len(placed))]:
+            traci.vehicle.setLaneChangeMode(vid, 0)
+        traci.simulationStep()
+
+        obs = build_observation(traci, "ego_test")
+
+    def vclass(lane: int, slot_idx: int) -> float:
+        return float(obs[4 + lane * 6 + slot_idx * 3 + 2])
+
+    for lane, slot_idx in expect_filled:
+        assert vclass(lane, slot_idx) != pytest.approx(-1.0), (lane, slot_idx)
+    for lane, slot_idx in expect_empty:
+        assert vclass(lane, slot_idx) == pytest.approx(-1.0), (lane, slot_idx)

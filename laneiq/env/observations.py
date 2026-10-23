@@ -69,15 +69,19 @@ _VCLASS_BUCKET: dict[str, int] = {
 # Matches the speed authored in `sumo_scenarios/highway_3lane/highway.edg.xml`.
 _DEFAULT_V_MAX_LANE: float = 36.11
 
-# SUMO `getNeighbors` mode bits:
-#   bit0 = left(1) / right(0)
+# SUMO `getNeighbors` mode bits (traci/_vehicle.py docstring; matches
+# getLeftLeaders=2 / getRightLeaders=3):
+#   bit0 = left(0) / right(1)
 #   bit1 = leader(1) / follower(0)
 # Map each side-mode to the (lane offset, slot name) it covers.
+# Before 2026-10 these were mirrored (bit0 read as left=1), so side-lane
+# slots held the wrong lane — checkpoints trained before then saw
+# mirrored/empty side lanes. See LESSONS.md "left/right obs swap".
 _SIDE_MODES: tuple[tuple[int, int, str], ...] = (
-    (0b011, +1, "front"),  # left-leader  (lane = ego_lane + 1)
-    (0b001, +1, "rear"),   # left-follower
-    (0b010, -1, "front"),  # right-leader (lane = ego_lane - 1)
-    (0b000, -1, "rear"),   # right-follower
+    (0b010, +1, "front"),  # left-leader  (lane = ego_lane + 1)
+    (0b000, +1, "rear"),   # left-follower
+    (0b011, -1, "front"),  # right-leader (lane = ego_lane - 1)
+    (0b001, -1, "rear"),   # right-follower
 )
 
 
