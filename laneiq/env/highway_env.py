@@ -485,6 +485,14 @@ class LaneIQEnv(gym.Env):
         # SUMO simply refuses an unsafe change (the ego holds its lane and
         # brakes instead). This is the rush demo's collision backstop.
         traci.vehicle.setLaneChangeMode(_EGO_ID, 1024)
+        # Allow passing on the right. LC2013's default (lcOvertakeRight=0)
+        # makes the ego slow to match any car in the lane to its LEFT, so a
+        # same-speed wall in lanes 1-2 pinned it at ~33 m/s in an EMPTY
+        # lane 0 (measured: overtaker mean 34 m/s → 45 m/s with this, 5
+        # seeds, 0 collisions). Rush only; other scenarios keep SUMO's rule.
+        traci.vehicle.setParameter(
+            _EGO_ID, "laneChangeModel.lcOvertakeRight", "1",
+        )
 
     def _seed_rush_traffic(self) -> None:
         """Pre-populate the band around the ego at reset so it meets

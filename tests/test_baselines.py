@@ -14,6 +14,7 @@ import pytest
 
 from laneiq.agents.base import Policy
 from laneiq.agents.baselines.greedy_agent import GreedyAgent
+from laneiq.agents.baselines.overtaker_agent import OvertakerAgent
 from laneiq.agents.baselines.random_agent import RandomAgent
 from laneiq.agents.baselines.safe_rule_agent import SafeRuleAgent
 from laneiq.env.actions import Action
@@ -277,6 +278,102 @@ def test_safe_respects_mask_blocking_left() -> None:
 def test_safe_validates_obs_shape() -> None:
     with pytest.raises(ValueError, match="expected obs shape"):
         SafeRuleAgent().act(np.zeros(10, dtype=np.float32))
+
+
+# ---------------------------------------------------------------------------
+# OvertakerAgent — cooldown + hysteresis (anti-ping-pong)
+# ---------------------------------------------------------------------------
+
+# A close, slower leader: inside held_up_gap (0.65) and below slower_dv (-0.03).
+_BLOCKER = {"gap_norm": 0.5, "dv_norm": -0.1, "vc_norm": 0.5}
+
+
+def test_overtaker_is_a_policy() -> None:
+    assert isinstance(OvertakerAgent(), Policy)
+
+
+def test_overtaker_stays_in_top_lane_on_open_road() -> None:
+    assert OvertakerAgent().act(_empty_obs(ego_lane=2)) == Action.STAY
+
+
+def test_overtaker_dodges_blocker_into_clean_lane() -> None:
+    obs = _empty_obs(ego_lane=2)
+    _set_neighbor(obs, 2, "front", **_BLOCKER)
+    assert OvertakerAgent().act(obs) == Action.CHANGE_RIGHT
+
+
+def test_overtaker_climbs_back_once_top_lane_is_clean() -> None:
+    assert OvertakerAgent().act(_empty_obs(ego_lane=1)) == Action.CHANGE_LEFT
+
+
+def test_overtaker_does_not_climb_back_behind_unpassed_blocker() -> None:
+    """The ping-pong fix: lane 2 is 'clear' to change into (gap ≥ 35 m) but
+    its leader is still a blocker, so climbing back would only trigger
+    another dodge."""
+    obs = _empty_obs(ego_lane=1)
+    _set_neighbor(obs, 2, "front", **_BLOCKER)
+    assert OvertakerAgent().act(obs) == Action.STAY
+
+
+def test_overtaker_does_not_dodge_into_equally_blocked_lane() -> None:
+    obs = _empty_obs(ego_lane=2)
+    _set_neighbor(obs, 2, "front", **_BLOCKER)
+    _set_neighbor(obs, 1, "front", gap_norm=0.55, dv_norm=-0.1, vc_norm=0.5)
+    assert OvertakerAgent().act(obs) == Action.STAY
+
+
+def test_overtaker_dodges_into_blocked_lane_with_much_more_room() -> None:
+    obs = _empty_obs(ego_lane=2)
+    _set_neighbor(obs, 2, "front", **_BLOCKER)
+    _set_neighbor(obs, 1, "front", gap_norm=0.6, dv_norm=-0.1, vc_norm=0.5)
+    assert OvertakerAgent(roomier_gap_norm=0.05).act(obs) == Action.CHANGE_RIGHT
+
+
+def test_overtaker_dodges_far_same_speed_leader_when_below_cruise() -> None:
+    """Rush regression: SUMO parks the ego ~106 m behind a same-speed car
+    (gap saturates at 1.0, dv 0) at 66% of the limit with an empty lane
+    beside it. That counts as held up → pass on the clear side."""
+    obs = _empty_obs(ego_lane=1, ego_speed_norm=0.66)
+    _set_neighbor(obs, 1, "front", gap_norm=1.0, dv_norm=0.0, vc_norm=0.0)
+    _set_neighbor(obs, 2, "front", gap_norm=0.26, dv_norm=0.0, vc_norm=0.0)
+    assert OvertakerAgent().act(obs) == Action.CHANGE_RIGHT
+
+
+def test_overtaker_does_not_climb_back_toward_far_slower_leader() -> None:
+    """After dodging, a far (gap-saturated) but slower car still ahead in
+    the top lane vetoes the climb — the ego would just catch it again."""
+    obs = _empty_obs(ego_lane=1, ego_speed_norm=1.0)
+    _set_neighbor(obs, 2, "front", gap_norm=1.0, dv_norm=-0.33, vc_norm=0.0)
+    assert OvertakerAgent().act(obs) == Action.STAY
+
+
+def test_overtaker_ignores_far_leader_when_cruising() -> None:
+    obs = _empty_obs(ego_lane=2, ego_speed_norm=0.95)
+    _set_neighbor(obs, 2, "front", gap_norm=1.0, dv_norm=0.0, vc_norm=0.0)
+    assert OvertakerAgent().act(obs) == Action.STAY
+
+
+def test_overtaker_holds_lane_for_commit_steps_after_change() -> None:
+    agent = OvertakerAgent(commit_steps=3)
+    climb = _empty_obs(ego_lane=1)
+    assert agent.act(climb) == Action.CHANGE_LEFT
+    for _ in range(3):
+        assert agent.act(climb) == Action.STAY
+    assert agent.act(climb) == Action.CHANGE_LEFT
+
+
+def test_overtaker_reset_clears_cooldown() -> None:
+    agent = OvertakerAgent(commit_steps=10)
+    climb = _empty_obs(ego_lane=1)
+    assert agent.act(climb) == Action.CHANGE_LEFT
+    agent.reset(seed=0)
+    assert agent.act(climb) == Action.CHANGE_LEFT
+
+
+def test_overtaker_respects_mask() -> None:
+    obs = _empty_obs(ego_lane=1)
+    mask = np.array([True, False, True])
+    assert OvertakerAgent().act(obs, action_mask=mask) == Action.STAY
 
 
 # ---------------------------------------------------------------------------
