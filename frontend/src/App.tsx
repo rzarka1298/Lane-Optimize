@@ -52,7 +52,8 @@ const QUICK_PICKS: QuickPick[] = [
     tooltip:
       "Safety-tuned PPO at medium density. Picks its lane changes (~3 per " +
       "minute); SUMO's lane-change assist refuses any unsafe one. 0% " +
-      "collisions, fastest PPO finish on high density (30.6 s / km).",
+      "collisions; ~1 s/km faster than the rule-based drivers in heavy " +
+      "traffic (20 paired seeds).",
   },
   {
     label: "Aggressive",
@@ -460,12 +461,13 @@ export function App() {
 
       <details className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
         <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
-          How it learned — training curves for the canonical agents
+          How it learned — training curves (pre-fix runs)
         </summary>
         <p className="mt-2 text-slate-500">
           Each panel shows mean episode return (or value-function explained
-          variance, for MAPPO) over training steps. The dashboard above
-          plays back checkpoints from the end of these runs.
+          variance, for MAPPO) over training steps. These are the Week-7
+          runs, trained before the side-lane observation fix; the current
+          checkpoints were retrained since (see docs/results.md).
         </p>
         <img
           src="/training_curves.png"
@@ -476,15 +478,15 @@ export function App() {
 
       <details className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
         <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
-          How it uses lanes — per-replay heatmaps with ego trajectory
+          How it uses lanes — per-replay heatmaps (pre-fix replays)
         </summary>
         <p className="mt-2 text-slate-500">
           Background = mean vehicles per lane per time bin (darker = more
           traffic). Gold line = ego&apos;s lane over time. Dots mark lane
           changes. The red X marks where the episode ended (collision or
-          end-of-road). The conservative ppo_v2 picks the open lane and
-          holds it; ppo_v1&apos;s collision panel shows the lane change
-          that ended the episode.
+          end-of-road). Recorded with the pre-fix ppo_v1/ppo_v2 agents,
+          before lane changes were safety-checked; ppo_v1&apos;s collision
+          panel is the unchecked lane change that motivated the fix.
         </p>
         <img
           src="/lane_efficiency.png"
@@ -495,19 +497,18 @@ export function App() {
 
       <details className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
         <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
-          Overtaking — trained vs untrained on the gauntlet scenario
+          Who gets through traffic fastest — 20-seed finish times
         </summary>
         <p className="mt-2 text-slate-500">
-          The gauntlet floods lane 0 with slow traffic and starts the ego
-          there. Top: ppo_v2 (not trained for it) gives up — stays pinned
-          to lane 0 at 24.8 m/s, zero lane changes. Bottom: ppo_v5
-          (trained on the gauntlet) escapes within the first second and
-          cruises at 32.7 m/s. Try it live with the &quot;Gauntlet&quot;
-          quick-pick.
+          Time to drive 1 km, mean of 20 seeds with 95% confidence
+          intervals. With safety-checked lane changes every agent is
+          collision-free. In heavy traffic PPO is about 1 s/km faster than
+          the rule-based drivers (paired over the same seeds); in light
+          traffic the field ties — there&apos;s nothing to overtake.
         </p>
         <img
-          src="/gauntlet_comparison.png"
-          alt="Gauntlet comparison — ppo_v2 stuck in lane 0 vs ppo_v5 escaping"
+          src="/finish_time.png"
+          alt="Dot plot of time to drive 1 km per agent at low, medium and high density"
           className="mt-2 w-full rounded border border-slate-800"
         />
       </details>

@@ -23,7 +23,7 @@ and depends only on the layers below it.
                                                       │
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 3 — Agents                                                │
-│  DQN (from scratch) + PPO (sb3-contrib MaskablePPO) + MAPPO     │
+│  DQN (from scratch) + PPO (MaskablePPO) + MAPPO + rule baselines│
 │  laneiq/agents/                                                  │
 └─────────────────────────────────────────────────────────────────┘
                                                       ▲
@@ -39,7 +39,7 @@ and depends only on the layers below it.
                                                       │
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 1 — SUMO scenario                                         │
-│  3-lane 1km highway + 4 vTypes + 3 density route files (XML)    │
+│  3-lane 1km highway + 4 vTypes + 5 scenario route files (XML)   │
 │  sumo_scenarios/highway_3lane/                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -48,15 +48,19 @@ and depends only on the layers below it.
 
 Hand-authored XML defining the simulated world. A single 1 km edge
 with 3 lanes, four vehicle "personalities" (`aggressive`, `normal`,
-`slow`, `ego`), and three Poisson flow densities (`low`, `medium`,
-`high`).
+`slow`, `ego`), three Poisson flow densities (`low`, `medium`,
+`high`), plus two special scenarios: `gauntlet` (the ego starts in
+lane 0 behind a slow wall) and `rush` (a 10 km road with a 50 m/s
+limit, used by the Aggressive demo).
 
 | File | What |
 | --- | --- |
 | `highway.nod.xml` + `highway.edg.xml` | Topology: 1 km edge, 3 lanes, 36.11 m/s speed limit |
 | `highway.net.xml` | Generated from the above by `netconvert` (committed for cold-clone reproducibility) |
-| `vtypes.add.xml` | The 4 vehicle profiles (Krauss + LC2013 parameters) |
+| `highway_long.*` | The 10 km variant used by `rush` |
+| `vtypes.add.xml` | The 4 vehicle profiles (Krauss + LC2013 parameters). The ego pins `speedFactor="1" speedDev="0"` so its top speed is the lane limit on every seed. |
 | `routes_{low,medium,high}.rou.xml` | Poisson flows: 0.25 / 0.65 / 1.45 vehicles/s |
+| `routes_{gauntlet,rush}.rou.xml` | Scenario-specific traffic |
 | `highway.sumocfg` | Top-level config; sets the load-bearing collision policy |
 
 Background traffic is spawned via SUMO `<flow>` elements with
@@ -72,10 +76,10 @@ the standard Gymnasium API. **Passes `gymnasium.utils.env_checker.check_env`.**
 | Module | What |
 | --- | --- |
 | `sumo_runtime.py` | TraCI lifecycle (`build_argv`, `sumo_session`, `sumo_binary`). Manages SUMO process startup/teardown. |
-| `observations.py` | 25-dimensional observation vector (ego state + per-lane neighbors + lane-validity mask). Pure function over a TraCI snapshot. |
-| `actions.py` | 3 discrete actions (`STAY`, `CHANGE_LEFT`, `CHANGE_RIGHT`); `valid_actions_mask` enforces physical constraints. |
+| `observations.py` | 25-dimensional observation vector (ego state + per-lane neighbors + lane-validity mask), built from a TraCI snapshot. A real-SUMO test pins the side-lane slots to the true lanes. |
+| `actions.py` | 3 discrete actions (`STAY`, `CHANGE_LEFT`, `CHANGE_RIGHT`); `valid_actions_mask`; `LaneChangeCooldown` (1.5 s between executed changes); the ego lane-change modes (`768` default = SUMO refuses unsafe requests, `0` = unchecked). |
 | `rewards.py` | 6-component reward (`speed`, `lane_cost`, `jerk`, `unsafe_gap`, `collision`, `alive`); pure function decoupled from observations. |
-| `highway_env.py` | The integrated `LaneIQEnv` class — the seam every agent and trainer talks to. |
+| `highway_env.py` | The integrated `LaneIQEnv` class — the seam every agent and trainer talks to. Reports `info["executed_action"]`, the lane change SUMO actually made. |
 | `mixed_density_env.py` | Wrapper that samples `low`/`medium`/`high` per `reset()` for robust training. |
 | `multi_agent_env.py` | PettingZoo `ParallelEnv` with N concurrent egos. Used by MAPPO training. |
 
@@ -93,6 +97,7 @@ interchangeably.
 | Agent | Type | Implementation |
 | --- | --- | --- |
 | `RandomAgent`, `GreedyAgent`, `SafeRuleAgent` | rule-based | `laneiq/agents/baselines/` |
+| `OvertakerAgent` | rule-based, demo only | `laneiq/agents/baselines/overtaker_agent.py` — the rush weaver |
 | `DQNAgent` | value-based RL | `laneiq/agents/dqn/` (from scratch in PyTorch) |
 | `PPOAgent` | policy-gradient RL | `laneiq/agents/ppo_sb3.py` (wraps `sb3_contrib.MaskablePPO`) |
 | MAPPO (parameter-sharing) | multi-agent RL | `scripts/train_mappo.py` (plain `stable_baselines3.PPO` over a supersuit-wrapped `LaneIQParallelEnv`) |
@@ -104,8 +109,9 @@ SB3's MaskablePPO is the production-grade impl with action masking
 support, faster to train and more debuggable than a from-scratch reimpl.
 
 **Why MAPPO uses plain PPO not MaskablePPO:** supersuit's vec-env
-wrapping doesn't propagate action masks. We documented the trade-off in
-the codebase and rely on the env's silent-no-op-on-invalid-lane behavior.
+wrapping doesn't propagate action masks. The env turns an invalid or
+cooling-down request into `STAY`, and observation slot 23 shows each ego
+when a change isn't available, so the policy can still learn it.
 
 ## Layer 4 — Evaluation
 
@@ -116,13 +122,16 @@ per-episode CSV.
 
 | Module | What |
 | --- | --- |
-| `metrics.py` | `EpisodeMetrics` dataclass (15 fields per episode: speed, collision, lc/min, jerk, near-miss rate, return…). Pure observer fed by the runner. |
-| `runner.py` | Drives one episode end-to-end. |
-| `compare.py` | The matrix CLI. Produces all `results/*_eval_matrix.csv` files. |
+| `metrics.py` | `EpisodeMetrics` dataclass (speed, collision, episode length, lc/min, jerk, near-miss rate, return…). Pure observer fed by the runner. |
+| `runner.py` | Drives one episode end-to-end; counts lane changes from `info["executed_action"]`. |
+| `compare.py` | The matrix CLI. `--ego-lane-change-mode` overrides the env default. |
 
-The Week-7 final eval at 20 seeds (5 agents × 3 densities × 20 seeds =
-300 episodes) takes ~30 minutes wall-clock and lives at
-`results/final_eval_matrix.csv`.
+The current 20-seed eval (5 agents × 3 densities × 20 seeds = 300
+episodes) lives at
+`results/ctrl_eval_matrix_existing.csv`, with the gauntlet at
+`results/ctrl_eval_gauntlet_existing.csv`. Drivers are ranked by
+**finish time**: on a fixed 1 km episode the return can't tell a fast
+driver from a slow one (see [`rl_design.md`](rl_design.md)).
 
 ## Layer 5 — Live demo
 
@@ -142,10 +151,21 @@ streams per-tick state to a React frontend over WebSocket.
 The frontend (Vite + React 18 + TypeScript + Tailwind v3) consumes
 these via a typed API client and renders four panels:
 
-- **HighwayCanvas** — Canvas2D top-down road with rAF-interpolated vehicles
-- **DecisionTicker** — chip with the AI's chosen action + English explanation + DQN Q-bars
+- **HighwayCanvas** — Canvas2D top-down road, follow-camera on the ego
+- **DecisionTicker** — chip with the action the car actually took (`decision.action` is the executed action, so a refused change shows as "stay") + English explanation
 - **MetricsPanel** — stat cards + Recharts cumulative-return + per-component reward charts
 - **Diagnostics + collapsible "How it learned" / "How it uses lanes"** panels
+
+**Why the canvas doesn't stutter:** ticks go into a `TickBuffer`
+(`frontend/src/api/tickBuffer.ts`) outside React. The draw loop renders
+200 ms behind the newest tick and interpolates positions by sim time
+`t`, against a smoothed estimate of when each tick arrived. Network or
+render jitter therefore never reaches the picture. React state (charts,
+ticker) is committed at most every 250 ms, and immediately on an
+episode end or an action change, so chart renders don't compete with
+the 60 fps draw loop. SUMO moves a car a whole lane in one step; the
+canvas eases lane changes over ~0.5 s and fades cars in and out at the
+window edges. All of it is display-only and the simulation is untouched.
 
 **Why the WS envelope is unified live-vs-replay:** the recording script
 (`scripts/record_replay.py`) emits ticks via the same `build_tick`

@@ -23,13 +23,13 @@ The goal of every shot is "this is a real, working system."
 | Time | Shot | What you do | What to say (voiceover or caption) |
 | --- | --- | --- | --- |
 | 0:00–0:08 | **Title + dashboard** | Dashboard already open, nothing running. Slow cursor move across the panels. | "LaneIQ — a reinforcement-learning agent that drives a highway, built end-to-end: SUMO simulator, two RL algorithm families, a live dashboard." |
-| 0:08–0:18 | **Start the canonical agent** | Quick-pick **Conservative**, density **high**, click **Start live**. | "This is a PPO agent I trained from a 6-component reward. It's the only one of five agents with a zero-percent collision rate at every traffic density." |
-| 0:18–0:30 | **Watch it drive** | Let the canvas run. Point cursor at the gold EGO. Point at the DecisionTicker as the chip changes. | "The gold car is the agent. Up top, it narrates every decision in plain English — this is the policy's actual chosen action, streamed at 10 Hz." |
+| 0:08–0:18 | **Start the canonical agent** | Quick-pick **Conservative** (`ppo_v12`), switch density to **high**, click **Start live**. | "This is a PPO agent I trained on a 6-component reward. It decides when to change lanes; SUMO's lane-change assist refuses any change that would cut into another car. In heavy traffic it finishes about a second per kilometre faster than the rule-based drivers, paired over 20 seeds." |
+| 0:18–0:30 | **Watch it drive** | Let the canvas run. Point cursor at the gold EGO. Point at the DecisionTicker as the chip changes. | "The gold car is the agent. Up top, it narrates every decision in plain English: the lane change the car actually made, streamed at 10 Hz." |
 | 0:30–0:40 | **Metrics** | Point at the MetricsPanel — speed counter, the climbing cumulative-return curve, the reward-component chart. | "Live metrics: episode return climbing, the six reward components, current speed and lane." |
 | 0:40–0:42 | **Stop** | Click **Stop**. | (pause) |
-| 0:42–0:58 | **The gauntlet — the payoff** | Quick-pick **Gauntlet** (it sets agent + density together). Click **Start live**. Let it run. | "Now the interesting part. The 'gauntlet' scenario forces the car to start stuck behind a wall of slow traffic. A reward change alone couldn't make an agent overtake — I had to redesign the environment. Watch it escape the slow lane and accelerate away." |
-| 0:58–1:05 | **Contrast** | Stop. Switch agent dropdown to **Conservative** (keep density gauntlet). Start. It sits in lane 0. | "Same scenario, the agent that wasn't trained for it: it just gives up and follows the slow wall. 25 metres per second versus 33." |
-| 1:05–1:15 | **The evidence** | Stop. Scroll down. Expand **"How it learned"** then **"Overtaking"** tiles. | "Everything's backed by reproducible evaluation — 300 episodes per agent, training curves, a twenty-seed final matrix. It's all in the repo." |
+| 0:42–0:55 | **The gauntlet** | Quick-pick **Gauntlet** (`ppo_v10`; sets agent + density together). Click **Start live**. Let it run. | "The gauntlet starts the car stuck behind a wall of slow traffic. Watch it pick a gap, change lanes and get out." |
+| 0:55–1:05 | **Aggressive** | Stop. Quick-pick **Aggressive** (the rule-based overtaker on the 10 km rush road). Start. | "For contrast, a hand-written overtaker on a faster road: it weaves past 33 m/s traffic at about 42 m/s, and the same lane-change assist keeps it collision-free." |
+| 1:05–1:15 | **The evidence** | Stop. Scroll down. Expand **"How it learned"** then **"How it uses lanes"**. | "Everything's backed by reproducible evaluation: 20 seeds per agent and density, ranked by finish time. A big part of the work was finding why the early numbers were wrong. It's all in the repo." |
 
 ## Alternative 30-second cut (for the README hero GIF)
 
@@ -40,7 +40,7 @@ gauntlet payoff:
 | --- | --- |
 | 0:00–0:03 | Dashboard, click **Gauntlet** quick-pick |
 | 0:03–0:06 | Click **Start live** |
-| 0:06–0:24 | Ego spawns stuck in lane 0, then escapes and accelerates — the DecisionTicker flashing CHANGE LEFT as it does |
+| 0:06–0:24 | Ego spawns stuck in lane 0, then changes out and accelerates — the DecisionTicker flashing CHANGE LEFT as it does |
 | 0:24–0:30 | MetricsPanel return curve climbing |
 
 Loops cleanly because it starts and ends on a calm frame.

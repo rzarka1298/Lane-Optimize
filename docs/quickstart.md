@@ -41,10 +41,10 @@ Fast tests (no SUMO, ~1 sec):
 make test
 ```
 
-Full suite including SUMO integration (~30 sec):
+Full suite including SUMO integration (~1-2 min):
 
 ```bash
-uv run pytest        # 176 tests; 13 are slow (marked @sumo)
+uv run pytest        # 219 tests; 29 are slow (marked @sumo)
 ```
 
 Lint:
@@ -90,16 +90,20 @@ Open **http://localhost:5173** in a browser.
 ## 4. Drive the demo
 
 1. The agent dropdown is pre-selected to the canonical PPO
-   (`ppo_v2_safety_heavy_150k` — labeled "PPO conservative").
+   (`ppo_v12_safety_cd_150k`, labeled "PPO canonical"). Checkpoints
+   trained before the side-lane observation fix are still listed,
+   marked "(pre-fix)".
 2. Tick **"loop episodes"** if you want continuous playback.
 3. Click **Start live**. After ~5 seconds of warmup the ego
    appears (gold rectangle, "EGO" label) and starts driving.
-4. The DecisionTicker shows the AI's chosen action with a flash
-   animation on every change. The cumulative-return chart climbs
-   in real time.
-5. Try the **quick-pick** buttons at the top: Conservative,
-   Aggressive, Multi-agent — each loads a different trained
-   policy with a tooltip explaining the trade-off.
+4. The DecisionTicker shows the action the car actually took, with a
+   flash animation on every change. A lane change SUMO refused as
+   unsafe shows as "stay". The cumulative-return chart climbs in real
+   time.
+5. Try the **quick-pick** buttons at the top: Conservative
+   (`ppo_v12`), Aggressive (the rule-based overtaker on the 10 km rush
+   road), Multi-agent (`mappo_v3`), Gauntlet (`ppo_v10`). Each has a
+   tooltip explaining the trade-off.
 6. Try **Play replay** with one of the pre-recorded JSONs
    (visible if `results/replays/` has any files) to see a
    deterministic playback that doesn't even need SUMO running.
@@ -113,7 +117,7 @@ All canonical checkpoints ship in `checkpoints/final/`. To train a
 fresh one:
 
 ```bash
-# DQN from scratch (mixed density, 200k env steps, ~14 min on Apple Silicon)
+# DQN from scratch (mixed density, 200k env steps)
 PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python scripts/train_dqn.py \
     --density mixed \
     --total-steps 200000 \
@@ -121,21 +125,32 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python scripts/train_dqn.py \
     --log-dir runs/dqn_fresh \
     --checkpoint-out checkpoints/dqn_fresh.pt
 
-# PPO with custom reward weights (experiment with the racer demo)
+# PPO — the canonical ppo_v12 recipe (safety weights + lane-change cost)
 PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python scripts/train_ppo.py \
     --density mixed \
     --total-steps 150000 \
     --seed 42 \
-    --w-speed 5.0 --w-collision -10 --w-unsafe-gap -0.05 \
-    --log-dir runs/ppo_racer \
-    --checkpoint-out checkpoints/ppo_racer.zip
+    --w-collision -100 --w-unsafe-gap -1.0 --w-lane-cost -1.0 \
+    --log-dir runs/ppo_fresh \
+    --checkpoint-out checkpoints/ppo_fresh.zip
+
+# Parameter-sharing MAPPO — the mappo_v3 recipe (4 egos, cooperative bonus)
+uv run python scripts/train_mappo.py \
+    --shared-speed-bonus 0.1 --w-lane-cost -1.0 \
+    --checkpoint-out checkpoints/mappo_fresh.zip
 ```
+
+Training runs under the env defaults: 1.5 s lane-change cooldown and
+safety-checked lane changes (`ego_lane_change_mode=768`).
+`--w-alive` takes a negative value to turn the alive bonus into a
+per-step time penalty. We tried `-0.19` and it made PPO slower (see
+[`rl_design.md`](rl_design.md)).
 
 To use a fresh checkpoint in the live demo, copy it to
 `checkpoints/final/`:
 
 ```bash
-cp checkpoints/ppo_racer.zip checkpoints/final/ppo_racer_150k.zip
+cp checkpoints/ppo_fresh.zip checkpoints/final/ppo_fresh_150k.zip
 ```
 
 The backend re-walks `checkpoints/final/` on each `GET /runs` call,
@@ -145,23 +160,44 @@ restart.
 ## 6. (Optional) Re-run the eval matrix
 
 ```bash
-# 20-seed final eval (5 agents × 3 densities × 20 seeds = 300 episodes, ~30 min)
+# 20-seed eval (5 agents × 3 densities × 20 seeds = 300 episodes)
 uv run python -m laneiq.eval.compare \
     --agents random,greedy,safe_rule,dqn,ppo \
     --densities low,medium,high \
     --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 \
-    --dqn-checkpoint checkpoints/final/dqn_v3_mixed_200k.pt \
-    --ppo-checkpoint checkpoints/final/ppo_v2_safety_heavy_150k.zip \
-    --out results/final_eval_matrix.csv \
-    --per-episode-out results/final_eval_episodes.csv
+    --dqn-checkpoint checkpoints/final/dqn_v4_mixed_200k_obsfix.pt \
+    --ppo-checkpoint checkpoints/final/ppo_v12_safety_cd_150k.zip \
+    --out results/ctrl_eval_matrix_existing.csv \
+    --per-episode-out results/ctrl_eval_matrix_existing_episodes.csv
+
+# Gauntlet (PPO slot = the gauntlet specialist)
+uv run python -m laneiq.eval.compare \
+    --agents random,greedy,safe_rule,dqn,ppo --densities gauntlet \
+    --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 \
+    --dqn-checkpoint checkpoints/final/dqn_v4_mixed_200k_obsfix.pt \
+    --ppo-checkpoint checkpoints/final/ppo_v10_gauntlet_cd_300k.zip \
+    --out results/ctrl_eval_gauntlet_existing.csv \
+    --per-episode-out results/ctrl_eval_gauntlet_existing_episodes.csv
+
+# MAPPO, per ego
+uv run python scripts/eval_mappo.py \
+    --checkpoint checkpoints/final/mappo_v3_coop_cd_300k.zip \
+    --densities low,medium,high \
+    --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 \
+    --out results/ctrl_eval_mappo_v3_existing.csv
 ```
+
+Rank drivers by `episode_length_s_mean` (finish time), not return: on a
+fixed 1 km episode the return can't tell a fast driver from a slow one.
+Add `--ego-lane-change-mode 0` to either eval CLI to reproduce the old
+unchecked lane changes.
 
 Then re-render the plots:
 
 ```bash
 uv run python -m scripts.plot_pareto \
     --csv results/week4_reward_sweep.csv \
-    --baselines-csv results/final_eval_matrix.csv \
+    --baselines-csv results/ctrl_eval_matrix_existing.csv \
     --out docs/images/pareto_safety_speed.png
 
 uv run python -m scripts.plot_training_curves

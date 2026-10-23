@@ -20,28 +20,39 @@ vehicles' intents.
 ## Observation space — 25 dimensions
 
 `laneiq/env/observations.py:build_observation` produces a
-`Box(25,)` vector per step. Pure function over a TraCI snapshot
-(no hidden state).
+`Box(25,)` vector per step from a TraCI snapshot (`OBS_NAMES` lists
+every slot).
 
 | Indices | Component | Meaning |
 | --- | --- | --- |
-| 0–4 | Ego self-state | speed (norm.), accel (norm.), lane idx (0/1/2 → 0/0.5/1), lateral offset, headway to leader |
-| 5–14 | Per-lane neighbors | for each of 3 lanes: leader gap + leader speed + follower gap + follower speed (zeros if no leader/follower) |
-| 15–22 | Lane-by-lane density / mean speed | aggregate over a 100m window |
-| 23 | Lane-validity packed scalar | encodes `(left_ok, right_ok)` as `pack ∈ {0, 1, 2, 3}` then `pack/3` |
-| 24 | Time-to-end | normalized fraction of road left |
+| 0–3 | Ego self-state | speed / lane limit, lane idx (0/1/2 → 0/0.5/1), accel, lateral offset |
+| 4–21 | Neighbor slots | for each of 3 lanes × {front, rear}: gap / 100 m, Δspeed / v_max, vType bucket (−1 = no car) |
+| 22 | Local density | vehicles within ±100 m, saturating at 20 |
+| 23 | Lane-validity packed scalar | `(left_ok·2 + right_ok) / 3` — "can I change left / right *right now*" |
+| 24 | Time-headway to leader | normalized, capped at 5 s |
 
-All values are clipped to `[-1, 1]` or `[0, 1]` per the relevant
-SUMO physics. Normalization constants live in
-`laneiq/env/observations.py` so changing them is a one-place edit.
+All values are clipped to `[-1, 1]`. Normalization constants live in
+`ObservationConfig` so changing them is a one-place edit.
+
+**The bug that hid behind good numbers.** Side-lane slots come from
+TraCI's `getNeighbors(ego, mode)`, where bit 0 selects left (0) or
+right (1). The original table read that bit backwards: in the middle
+lane the left and right slots were swapped, and from an outer lane the
+real adjacent lane was never queried, so it always looked empty. Every
+agent trained before the fix learned on mirrored input, and the "safe"
+policies were mostly ones that had learned never to change lanes. The
+unit-test mock had been written from the same wrong table, so it agreed
+with the bug. The fix came with a test that places cars in known lanes
+in real SUMO and checks which slots they land in. Lesson: build mocks
+from the external system's spec, never from the code under test.
 
 **Why 25 not larger:** the trained PPO converges in 150k steps with
 this much. Larger obs = bigger network = more compute, no signal that
 extra signal would help. The lane-validity packed scalar (slot 23) is
-the cleverest dimension — it encodes the action mask the policy needs
-in a single float so the obs vector stays compact for both DQN
-(which uses `mask_invalid_q_values`) and MaskablePPO (which reads
-`env.action_masks()`).
+the cleverest dimension: it carries the action mask in one float, for
+both DQN (`mask_invalid_q_values`) and MaskablePPO
+(`env.action_masks()`). It also carries the lane-change cooldown (see
+below), so the policy can *see* when a change isn't available.
 
 ## Action space — 3 discrete
 
@@ -67,11 +78,37 @@ algorithmic approach (DDPG / SAC / continuous PPO).
 returns `[True, left_ok, right_ok]`. `STAY` is always valid — the
 agent can choose to do nothing even at lane boundaries.
 
-The env disables SUMO's internal lane-change motivations on the
-ego (`traci.vehicle.setLaneChangeMode(ego, 0)`), so every lane
-change is the policy's decision. **The ego CAN crash from a bad
-policy choice.** That's intentional — the collision reward teaches
-it not to.
+**Lane-change cooldown** (`LaneChangeCooldown`, 15 steps = 1.5 s).
+After an executed lane change the env forces `STAY` for 1.5 s and
+clears slot 23, so the mask blocks changes. Unmasked learners (MAPPO)
+still see why a request won't execute. Without the cooldown, agents that
+could see the side lanes dithered left and right. `gate()`
+picks what to submit, the env steps SUMO, then `confirm(changed)` starts
+the cooldown only if the ego's lane index actually moved. The reward
+still charges the *requested* action, so spamming requests costs.
+
+**Who decides, and who checks.** The env turns off all of SUMO's own
+lane-change motivations on the ego, so every change is the policy's
+decision. SUMO then *checks* each request against the
+`ego_lane_change_mode` setting (`laneiq/env/actions.py`), which is
+measured against real SUMO with a car parked right beside the ego:
+
+| Mode | Request into an occupied lane |
+| --- | --- |
+| `0` (pre-Week-10b default) | executed unchecked → collision |
+| `768` (**default**) | refused; the ego stays put, no speed adaptation |
+| `1024` | executed → collision (a sublane-model bit, *not* a safety check) |
+
+768 works like a car's lane-change assist: the policy still chooses
+*when* and *where* to change, and SUMO won't let it cut into another
+car. Every collision in the earlier evals was a change into a car
+directly alongside under mode 0. `info["executed_action"]` reports what
+SUMO actually did (a refused change counts as `STAY`), and that's what
+the eval harness and the live ticker use.
+
+The ego's vType also pins `speedFactor="1" speedDev="0"`. Without it
+SUMO sampled a speed factor per vehicle, so the ego's top speed varied
+by seed (up to 50 m/s on a 36.11 m/s road).
 
 ## Reward — 6 components
 
@@ -81,21 +118,34 @@ it not to.
 | Component | Default weight | Sign | Triggers |
 | --- | --- | --- | --- |
 | `speed` | `+1.0` | + | `w_speed × min(speed/v_max, 1.0)` per step |
-| `lane_cost` | `-0.05` | − | `w_lane_cost` per non-`STAY` action |
+| `lane_cost` | `-0.05` | − | `w_lane_cost` per non-`STAY` action (requested) |
 | `jerk` | `-0.2` | − | `w_jerk × |Δaccel| / a_max_norm` |
-| `unsafe_gap` | `-0.5` | − | `w_unsafe_gap` if `front_thw < 1.0s` |
+| `unsafe_gap` | `-0.5` | − | `w_unsafe_gap` if `front_thw < 1.5s` |
 | `collision` | `-50.0` | − | terminal; dominant magnitude |
-| `alive` | `+0.1` | + | dense per-step bonus (anti-suicide) |
+| `alive` | `+0.01` | + | dense per-step bonus (anti-suicide) |
 
-The Week-4 sweep tested four reward configurations. The big finding
-(Week 7, after re-running at 20 seeds): **reward shaping > training
-duration**. The `safety_heavy` variant
-(`w_collision=-100`, `w_unsafe_gap=-1.0`) reached genuine universal
-0% collisions in 150k training steps; the default-weight PPO needed
-500k AND still missed 15% of high-density episodes that the 5-seed
-Week-4 eval failed to surface.
+The canonical PPO uses the `safety_heavy` weights (`w_collision=-100`,
+`w_unsafe_gap=-1.0`) with `w_lane_cost=-1.0`. A lane change used to cost
+5% of one step's speed reward, which is effectively free. The value
+came from a −0.05 / −0.3 / −1.0 sweep.
 
-See [`results.md`](results.md) for the v1-vs-v2 comparison numbers.
+**The pitfall: speed reward on a fixed distance.** Episodes end at the
+1 km mark, and the speed term is paid per step. Summed over an episode it
+is about `distance / (v_max · dt)`, the same for every driver below the
+limit. Going faster just ends the episode sooner, and the alive bonus
+pays for every extra second. So **episode return is flat to negative in
+speed** and is not a measure of driving quality here. Evals rank drivers
+by **finish time**.
+
+**A fix that didn't work.** Turning `alive` into a per-step time penalty
+(`w_alive=-0.19`, so finishing 1 s sooner earns +2.0) and retraining made
+PPO *slower*, not faster. The likely cause: with the safety weights,
+merging in front of traffic triggers `unsafe_gap` (−1 per step under
+1.5 s headway), which costs more than the time a pass saves. Those
+checkpoints weren't promoted. The next attempt should rebalance
+`unsafe_gap` against a time or progress term.
+
+See [`results.md`](results.md) for the numbers.
 
 ## Algorithm 1 — DQN from scratch
 
@@ -103,8 +153,8 @@ See [`results.md`](results.md) for the v1-vs-v2 comparison numbers.
 
 - **Q-network** — 25 → 128 → 128 → 3 MLP, ReLU activations, 17k parameters
 - **Replay buffer** — uniform sampling from a 100k-transition deque (pre-allocated arrays for speed)
-- **Target network** — soft-updated every 1000 env steps for Bellman-target stability
-- **ε-greedy exploration** — linear decay from 1.0 → 0.05 over the first 10k steps
+- **Target network** — hard-copied from the online net every 1000 env steps for Bellman-target stability
+- **ε-greedy exploration** — linear decay from 1.0 → 0.05 over the first 50k steps
 - **Double DQN** — target uses `Q(s', argmax_a Q(s', a))` from the online net, value from the target net (mitigates Q-overestimation)
 - **Huber loss** — see "Tribal knowledge" below
 
@@ -186,8 +236,8 @@ concurrent egos in one SUMO scene. Pipeline:
    flatten the multi-agent env into an SB3-compatible VecEnv.
 4. **Plain `stable_baselines3.PPO`** (NOT MaskablePPO) — supersuit
    doesn't propagate action masks through the multi-agent wrapping.
-   The env's silent-no-op behavior on invalid lane targets handles
-   it instead.
+   The env turns an invalid or cooling-down request into `STAY`, and
+   slot 23 shows each ego when a change isn't available.
 
 The shared policy network has the same shape as single-agent PPO
 (25 → 128 → 128 → 3), so the same checkpoint can drive a single
@@ -196,20 +246,25 @@ ego in `LaneIQEnv` (which is what the live demo does — see
 
 ## Eval methodology
 
-The 5 canonical agents are evaluated on a `5 × 3 × 20 = 300`
-matrix (agents × densities × seeds). Each (agent, density, seed)
-cell runs one episode end-to-end with the same `EpisodeMetrics`
-collector — no agent-specific logic in the metrics layer.
+The 5 single-agent drivers are evaluated on a `5 × 3 × 20 = 300`
+matrix (agents × densities × seeds), plus the gauntlet at 20 seeds.
+Each (agent, density, seed) cell runs one episode end-to-end with the
+same `EpisodeMetrics` collector, so there's no agent-specific logic in
+the metrics layer. Lane changes are counted from
+`info["executed_action"]`, i.e. changes SUMO actually made.
 
 Aggregated CSV columns: mean ± std per metric, plus collision rate
 and reached-end rate. Per-episode CSV available for "why is one
 number weird?" investigations.
 
-The 20-seed bump (vs Week-4's 5 seeds) revealed a 15% collision
-rate in `ppo_v1_mixed_500k` at high density that 5-seed sampling
-masked as 0%. **For safety-critical RL, never trust a 0% rate at
-<10 seeds** — a true 15% Bernoulli has a 44% chance of looking like
-0% in 5 trials. Promote to 20 seeds before any "this is universally
-safe" claim.
+**Primary metric: finish time per km.** Under mode 768 every driver is
+collision-free, and return can't see speed (above), so the comparison
+is who gets through traffic fastest. Collisions stay in the table as a
+sanity check.
+
+**For safety-critical RL, never trust a 0% rate at <10 seeds.** A true
+15% Bernoulli has a 44% chance of looking like 0% in 5 trials. A
+5-seed eval hid exactly that (15% high-density collisions in an early
+PPO) until the 20-seed re-run.
 
 See [`results.md`](results.md) for the actual numbers.
