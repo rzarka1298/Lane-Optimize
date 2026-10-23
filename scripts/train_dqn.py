@@ -124,12 +124,16 @@ def main(argv: list[str] | None = None) -> int:
     # Per-episode print so the user can watch convergence in real time
     # without needing TensorBoard open.
     last_print_episode = [0]
+    # The callback gets episode index, not global step; ε is scheduled on
+    # global step, so accumulate it here (sum of episode lengths).
+    global_step = [0]
 
     def _on_episode_end(ep_idx: int, ep_return: float, ep_length: int) -> None:
+        global_step[0] += ep_length
         if ep_idx - last_print_episode[0] >= 25 or ep_idx == 1:
             print(
                 f"  ep {ep_idx:5d}  return={ep_return:8.2f}  "
-                f"len={ep_length:4d}  ε={agent.epsilon(ep_idx):.3f}",
+                f"len={ep_length:4d}  ε={agent.epsilon(global_step[0]):.3f}",
                 flush=True,
             )
             last_print_episode[0] = ep_idx

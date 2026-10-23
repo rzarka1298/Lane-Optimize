@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 # Set MPS fallback before any torch import.
@@ -52,6 +53,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--shared-speed-bonus", type=float, default=0.0,
                    help="cooperative bonus (default 0 = independent rewards)")
+    p.add_argument("--w-lane-cost", type=float, default=None,
+                   help="override RewardConfig.w_lane_cost (default: config default)")
     p.add_argument("--device", default="cpu",
                    choices=("cpu", "mps", "cuda"))
     p.add_argument("--log-dir", type=Path, default=None)
@@ -64,11 +67,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _build_env(*, density: str, n_egos: int, max_steps: int,
-               warmup_steps: int, seed: int, shared_speed_bonus: float):
+               warmup_steps: int, seed: int, shared_speed_bonus: float,
+               w_lane_cost: float | None = None):
     """Build LaneIQParallelEnv. For mixed density, sample per-episode."""
     # Lazy import.
     from laneiq.env.mixed_density_env import MixedDensityEnv  # noqa: F401 — future
     from laneiq.env.multi_agent_env import LaneIQParallelEnv
+    from laneiq.env.rewards import DEFAULT_REWARD_CONFIG
+
+    reward_config = DEFAULT_REWARD_CONFIG
+    if w_lane_cost is not None:
+        reward_config = replace(reward_config, w_lane_cost=w_lane_cost)
 
     if density == "mixed":
         # For now we don't have a MixedDensityParallelEnv; rotate density
@@ -86,6 +95,7 @@ def _build_env(*, density: str, n_egos: int, max_steps: int,
         warmup_steps=warmup_steps,
         seed=seed,
         shared_speed_bonus=shared_speed_bonus,
+        reward_config=reward_config,
     )
 
 
@@ -102,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 70)
     print(f"  total_steps      = {args.total_steps:,}")
     print(f"  shared_bonus     = {args.shared_speed_bonus}")
+    print(f"  w_lane_cost      = {args.w_lane_cost}")
     print(f"  device           = {args.device}")
     print(f"  seed             = {args.seed}")
     print(f"  log_dir          = {args.log_dir}")
@@ -113,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         density=args.density, n_egos=args.n_egos,
         max_steps=args.max_steps, warmup_steps=args.warmup_steps,
         seed=args.seed, shared_speed_bonus=args.shared_speed_bonus,
+        w_lane_cost=args.w_lane_cost,
     )
 
     # 2. supersuit pipeline:
