@@ -35,6 +35,8 @@ import traci
 
 from laneiq.env.actions import (
     ACTION_SPACE,
+    DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
+    LaneChangeCooldown,
     apply_action,
     disable_sumo_lane_change,
     valid_actions_mask,
@@ -155,6 +157,7 @@ class LaneIQEnv(gym.Env):
         obs_config: ObservationConfig = DEFAULT_OBSERVATION_CONFIG,
         reward_config: RewardConfig = DEFAULT_REWARD_CONFIG,
         loop: bool = False,
+        lane_change_cooldown_steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
     ) -> None:
         """Construct the env. Does NOT start SUMO; that happens in `reset()`."""
         super().__init__()
@@ -201,6 +204,9 @@ class LaneIQEnv(gym.Env):
         self._obs_config = obs_config
         self._reward_config = reward_config
         self._loop = loop
+        # Min dwell between executed ego lane changes; also masks obs[23]
+        # while active. 0 = off (pre-2026-10 dynamics). See actions.py.
+        self._cooldown = LaneChangeCooldown(lane_change_cooldown_steps)
         # Lap count is incremented every time the ego completes the 1km
         # road and is re-inserted at x=0 (loop mode only). Episode runs
         # until collision or max_steps.
@@ -323,6 +329,7 @@ class LaneIQEnv(gym.Env):
         # Build the initial observation; cache the reward-state slice for
         # the first step's `prev` (so jerk is computed from a real number,
         # not a placeholder).
+        self._cooldown.reset()
         obs = self._builder.build(_EGO_ID)
         self._last_obs = obs
         self._prev_reward_state = self._extract_reward_state()
@@ -341,9 +348,12 @@ class LaneIQEnv(gym.Env):
         assert self._builder is not None
         prev = self._prev_reward_state
 
-        # Apply the action (silent no-op if invalid; mask should prevent).
+        # Gate through the lane-change cooldown, then apply. `executed` is
+        # what SUMO actually sees; the reward still charges the *requested*
+        # action so unmasked learners pay for spamming changes.
+        executed = self._cooldown.gate(action, valid_actions_mask(self._last_obs))
         try:
-            apply_action(traci, _EGO_ID, action)
+            apply_action(traci, _EGO_ID, executed)
         except traci.exceptions.TraCIException as exc:
             # Race window: ego could have been removed between getIDList
             # check and changeLane call. Log and proceed; the post-step
@@ -374,13 +384,14 @@ class LaneIQEnv(gym.Env):
             and self._reinsert_ego_for_lap()
         ):
             nxt = self._extract_reward_state()
-            obs = self._builder.build(_EGO_ID)
+            obs = self._cooldown.mask_observation(self._builder.build(_EGO_ID))
             self._last_obs = obs
             self._prev_reward_state = nxt
             truncated = self._step_count >= self._max_steps
             info = {
                 "reward_components": {k: 0.0 for k in COMPONENT_KEYS},
                 "step_count": self._step_count,
+                "executed_action": int(executed),
                 "lap_count": self._lap_count,
                 "lap_transition": True,
             }
@@ -407,6 +418,7 @@ class LaneIQEnv(gym.Env):
                 "reward_components": components,
                 "ego_terminated_reason": "collision" if ego_collided else "exited",
                 "step_count": self._step_count,
+                "executed_action": int(executed),
             }
             return self._last_obs, float(reward), True, False, info
 
@@ -416,7 +428,7 @@ class LaneIQEnv(gym.Env):
             prev, action, nxt, config=self._reward_config
         )
 
-        obs = self._builder.build(_EGO_ID)
+        obs = self._cooldown.mask_observation(self._builder.build(_EGO_ID))
         self._last_obs = obs
         self._prev_reward_state = nxt
 
@@ -430,6 +442,7 @@ class LaneIQEnv(gym.Env):
         info: dict[str, Any] = {
             "reward_components": components,
             "step_count": self._step_count,
+            "executed_action": int(executed),
             "lap_count": self._lap_count,
         }
         return obs, float(reward), False, truncated, info

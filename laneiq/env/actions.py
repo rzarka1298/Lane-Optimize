@@ -73,8 +73,10 @@ def disable_sumo_lane_change(traci_conn, ego_id: str) -> None:
     - bits 2-3: cooperative (yield to others wanting to change)
     - bits 4-5: speed-gain
     - bits 6-7: keep-right
-    - bits 8-9: sublane
-    - bits 10-11: TraCI-requested override behavior
+    - bits 8-9: how TraCI-requested changes treat other drivers
+      (00 = ignore them — what we want here; 01 avoid immediate
+      collisions; 10/11 respect their speed/brake gaps)
+    - bits 10-11: sublane model
 
     With every bit clear, SUMO will execute exactly the lane changes
     `apply_action()` requests, including ones the LC2013 model would have
@@ -129,6 +131,69 @@ def apply_action(
         return  # silent no-op; the mask should have prevented this
 
     traci_conn.vehicle.changeLane(ego_id, target, duration_s)
+
+
+# ---------------------------------------------------------------------------
+# Lane-change cooldown — minimum dwell between executed lane changes
+# ---------------------------------------------------------------------------
+
+# 15 steps x 0.1 s = 1.5 s. Long enough to rule out left-right dithering,
+# short enough that a deliberate double change (e.g. lane 0 → 2) stays fluid.
+DEFAULT_LANE_CHANGE_COOLDOWN_STEPS: int = 15
+
+
+class LaneChangeCooldown:
+    """Per-vehicle lane-change cooldown, enforced by the env.
+
+    After an executed lane change, the next `steps` steps are forced to
+    `STAY`. The cooldown is made *observable* by clearing both lane-validity
+    bits in `observation[23]` while it is active, so:
+
+    - `valid_actions_mask(obs)` masks lane changes with no extra plumbing
+      (DQN argmax, MaskablePPO, rule baselines all read it), and
+    - unmasked learners (MAPPO via plain PPO) can still see why a request
+      won't execute.
+
+    `steps=0` disables it (reproduces pre-2026-10 env dynamics).
+    """
+
+    def __init__(self, steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS) -> None:
+        if steps < 0:
+            raise ValueError(f"cooldown steps must be >= 0, got {steps}")
+        self._steps = steps
+        self._remaining = 0
+
+    @property
+    def active(self) -> bool:
+        return self._remaining > 0
+
+    def reset(self) -> None:
+        self._remaining = 0
+
+    def gate(self, action: Action | int, valid_mask: np.ndarray) -> Action:
+        """Return the action that will actually execute this step.
+
+        Call exactly once per env step, before `apply_action`. A lane change
+        executes only if no cooldown is active and the target lane exists;
+        an executed change starts a new cooldown.
+        """
+        a = Action(int(action))
+        if self._remaining > 0:
+            self._remaining -= 1
+            return Action.STAY
+        if a != Action.STAY and bool(valid_mask[int(a)]):
+            self._remaining = self._steps
+            return a
+        return Action.STAY
+
+    def mask_observation(self, observation: np.ndarray) -> np.ndarray:
+        """Copy of `observation` with lane changes marked invalid while the
+        cooldown is active (the next `gate` would force STAY)."""
+        if self._remaining == 0:
+            return observation
+        masked = observation.copy()
+        masked[23] = 0.0
+        return masked
 
 
 # ---------------------------------------------------------------------------

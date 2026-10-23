@@ -18,6 +18,7 @@ from laneiq.env.actions import (
     ACTION_SPACE,
     N_ACTIONS,
     Action,
+    LaneChangeCooldown,
     apply_action,
     disable_sumo_lane_change,
     mask_invalid_q_values,
@@ -256,3 +257,61 @@ def test_apply_action_changes_lane_in_running_sumo() -> None:
                 break
         else:
             pytest.fail("ego did not reach lane 2 within 4 sim-seconds")
+
+
+# ---------------------------------------------------------------------------
+# LaneChangeCooldown
+# ---------------------------------------------------------------------------
+
+_ALL_VALID = np.array([True, True, True])
+
+
+def test_cooldown_blocks_changes_for_n_steps_then_releases() -> None:
+    cd = LaneChangeCooldown(steps=3)
+    assert cd.gate(Action.CHANGE_LEFT, _ALL_VALID) == Action.CHANGE_LEFT
+    # Next 3 steps are forced to STAY regardless of the request.
+    for _ in range(3):
+        assert cd.active
+        assert cd.gate(Action.CHANGE_RIGHT, _ALL_VALID) == Action.STAY
+    assert not cd.active
+    assert cd.gate(Action.CHANGE_RIGHT, _ALL_VALID) == Action.CHANGE_RIGHT
+
+
+def test_cooldown_not_started_by_stay_or_invalid_change() -> None:
+    cd = LaneChangeCooldown(steps=5)
+    assert cd.gate(Action.STAY, _ALL_VALID) == Action.STAY
+    # Left into a non-existent lane is coerced to STAY and starts no cooldown.
+    assert cd.gate(Action.CHANGE_LEFT, np.array([True, False, True])) == Action.STAY
+    assert not cd.active
+    assert cd.gate(Action.CHANGE_RIGHT, _ALL_VALID) == Action.CHANGE_RIGHT
+
+
+def test_cooldown_zero_steps_is_disabled() -> None:
+    cd = LaneChangeCooldown(steps=0)
+    for a in (Action.CHANGE_LEFT, Action.CHANGE_RIGHT, Action.CHANGE_LEFT):
+        assert cd.gate(a, _ALL_VALID) == a
+    assert not cd.active
+
+
+def test_cooldown_negative_steps_raises() -> None:
+    with pytest.raises(ValueError):
+        LaneChangeCooldown(steps=-1)
+
+
+def test_cooldown_mask_observation_makes_mask_stay_only() -> None:
+    obs = np.zeros(OBS_DIM, dtype=np.float32)
+    obs[23] = 1.0  # both lanes exist
+    cd = LaneChangeCooldown(steps=2)
+    assert cd.mask_observation(obs) is obs  # inactive → untouched
+    cd.gate(Action.CHANGE_LEFT, _ALL_VALID)
+    masked = cd.mask_observation(obs)
+    assert obs[23] == 1.0  # input not mutated
+    assert valid_actions_mask(masked).tolist() == [True, False, False]
+
+
+def test_cooldown_reset_clears_active_cooldown() -> None:
+    cd = LaneChangeCooldown(steps=10)
+    cd.gate(Action.CHANGE_LEFT, _ALL_VALID)
+    cd.reset()
+    assert not cd.active
+    assert cd.gate(Action.CHANGE_RIGHT, _ALL_VALID) == Action.CHANGE_RIGHT

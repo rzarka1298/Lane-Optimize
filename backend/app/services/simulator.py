@@ -373,7 +373,11 @@ def build_tick(
         except Exception:
             continue
 
-    action_name = ("stay", "change_left", "change_right")[int(action)]
+    # Show what the env executed: the lane-change cooldown can turn a
+    # requested change into STAY, and unmasked policies (MAPPO) do request
+    # during it. Falls back to the requested action for older payloads.
+    action = int(info.get("executed_action", action))
+    action_name = ("stay", "change_left", "change_right")[action]
     return SimTick(
         t=sim_time_s,
         step=step,

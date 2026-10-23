@@ -43,8 +43,11 @@ from pettingzoo import ParallelEnv
 
 from laneiq.env.actions import (
     ACTION_SPACE,
+    DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
+    LaneChangeCooldown,
     apply_action,
     disable_sumo_lane_change,
+    valid_actions_mask,
 )
 from laneiq.env.highway_env import (
     _DENSITY_TO_ROUTES,
@@ -124,6 +127,7 @@ class LaneIQParallelEnv(ParallelEnv):
         depart_positions_m: tuple[float, ...] | None = None,
         depart_lanes: tuple[int, ...] | None = None,
         depart_speed_mps: float = 18.0,
+        lane_change_cooldown_steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
     ) -> None:
         if density not in _DENSITY_TO_ROUTES:
             raise ValueError(
@@ -143,6 +147,10 @@ class LaneIQParallelEnv(ParallelEnv):
         self._reward_config = reward_config
         self._shared_speed_bonus = shared_speed_bonus
         self._depart_speed_mps = depart_speed_mps
+        # One lane-change cooldown per ego (see actions.LaneChangeCooldown);
+        # rebuilt on every reset.
+        self._cooldown_steps = lane_change_cooldown_steps
+        self._cooldowns: dict[str, LaneChangeCooldown] = {}
 
         # Resolve depart positions / lanes per-ego, with cycling defaults.
         if depart_positions_m is None:
@@ -272,6 +280,9 @@ class LaneIQParallelEnv(ParallelEnv):
 
         observations: dict[str, np.ndarray] = {}
         self._prev_reward_states = {}
+        self._cooldowns = {
+            aid: LaneChangeCooldown(self._cooldown_steps) for aid in self.agents
+        }
         for aid in self.agents:
             obs = self._builder.build(aid)
             observations[aid] = obs
@@ -300,11 +311,17 @@ class LaneIQParallelEnv(ParallelEnv):
             raise RuntimeError("step() called before reset()")
         assert self._builder is not None
 
-        # 1. Apply each agent's action (use STAY for any missing).
+        # 1. Gate each agent's action through its lane-change cooldown, then
+        # apply (use STAY for any missing). Rewards below still charge the
+        # *requested* action, so spamming changes during a cooldown costs.
+        executed: dict[str, int] = {}
         for aid in self.agents:
             a = actions.get(aid, 0)  # default to STAY
+            executed[aid] = int(self._cooldowns[aid].gate(
+                a, valid_actions_mask(self._last_obs[aid]),
+            ))
             try:
-                apply_action(traci, aid, a)
+                apply_action(traci, aid, executed[aid])
             except traci.exceptions.TraCIException as exc:
                 _log.warning("apply_action failed for %s: %s", aid, exc)
 
@@ -356,6 +373,7 @@ class LaneIQParallelEnv(ParallelEnv):
                     "reward_components": components,
                     "ego_terminated_reason": "collision" if ego_collided else "exited",
                     "step_count": self._step_count,
+                    "executed_action": executed[aid],
                 }
                 agent_speed_terms[aid] = 0.0
                 continue
@@ -369,7 +387,7 @@ class LaneIQParallelEnv(ParallelEnv):
             terminations[aid] = False
             truncations[aid] = truncated_this_step
 
-            obs = self._builder.build(aid)
+            obs = self._cooldowns[aid].mask_observation(self._builder.build(aid))
             observations[aid] = obs
             self._last_obs[aid] = obs
             self._prev_reward_states[aid] = nxt
@@ -378,6 +396,7 @@ class LaneIQParallelEnv(ParallelEnv):
             agent_done_info[aid] = {
                 "reward_components": components,
                 "step_count": self._step_count,
+                "executed_action": executed[aid],
             }
             infos[aid] = agent_done_info[aid]
 
@@ -420,8 +439,6 @@ class LaneIQParallelEnv(ParallelEnv):
         """Per-agent valid-action masks. Used by MaskablePPO after
         supersuit flattening (each flattened env exposes its agent's mask).
         """
-        from laneiq.env.actions import valid_actions_mask
-
         out: dict[str, np.ndarray] = {}
         for aid in self.agents:
             if aid in self._last_obs:

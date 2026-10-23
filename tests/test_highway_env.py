@@ -207,3 +207,33 @@ def test_env_passes_gymnasium_check_env() -> None:
         check_env(env, skip_render_check=True)
     finally:
         env.close()
+
+
+@pytest.mark.slow
+@pytest.mark.sumo
+def test_lane_change_cooldown_enforced_in_sumo() -> None:
+    """A policy that requests a lane change every step gets at most one
+    executed change per cooldown window, and the mask reports it."""
+    e = LaneIQEnv(density="low", max_steps=120, warmup_steps=30, seed=7,
+                  lane_change_cooldown_steps=15)
+    try:
+        e.reset(seed=7)
+        executed_at: list[int] = []
+        for t in range(120):
+            mask = e.action_masks()
+            # Request a change toward whichever side exists, ignoring the
+            # cooldown part of the mask on purpose.
+            request = 1 if t % 2 == 0 else 2
+            _obs, _r, term, trunc, info = e.step(request)
+            if info["executed_action"] != 0:
+                executed_at.append(t)
+                assert not e.action_masks()[1:].any(), "mask must block during cooldown"
+            elif executed_at and t - executed_at[-1] <= 15:
+                assert not mask[1:].any() or t - executed_at[-1] == 0
+            if term or trunc:
+                break
+        assert len(executed_at) >= 2, executed_at
+        gaps = np.diff(executed_at)
+        assert (gaps >= 16).all(), gaps
+    finally:
+        e.close()

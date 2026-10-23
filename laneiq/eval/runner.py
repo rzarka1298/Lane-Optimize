@@ -87,7 +87,10 @@ def run_episode(
 
         if not math.isnan(speed):
             acc.observe(
-                action=action,
+                # Count what the env executed (the lane-change cooldown can
+                # turn a requested change into STAY); fall back for envs
+                # that don't report it.
+                action=info.get("executed_action", action),
                 reward=float(reward),
                 speed_mps=speed,
                 accel_mps2=accel,

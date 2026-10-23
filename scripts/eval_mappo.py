@@ -103,7 +103,9 @@ def run_one_episode(
                 acc = accs[aid]
                 acc["return"] += float(r)
                 acc["steps"] += 1
-                if int(actions.get(aid, 0)) != int(Action.STAY):
+                # Executed (post-cooldown) action; requests can be no-ops.
+                done = infos.get(aid, {}).get("executed_action", actions.get(aid, 0))
+                if int(done) != int(Action.STAY):
                     acc["lc"] += 1
                 # Raw speed + thw via TraCI snapshot (only if ego still present).
                 if aid in traci.vehicle.getIDList():
