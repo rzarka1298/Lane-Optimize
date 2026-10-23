@@ -60,7 +60,21 @@ ACTION_NAMES: tuple[str, ...] = ("stay", "change_left", "change_right")
 # ---------------------------------------------------------------------------
 
 
-def disable_sumo_lane_change(traci_conn, ego_id: str) -> None:
+# Ego lane-change modes (SUMO setLaneChangeMode bitset). Bits 0-7 clear =
+# no autonomous lane changes; bits 8-9 set how a TraCI-requested change
+# treats other drivers. Verified against SUMO (a request into a car
+# directly alongside): 0 and 1024 execute it and collide; 256/512/768
+# refuse it. 768 (= 0b11 << 8) respects others' gaps WITHOUT adapting the
+# ego's speed, so a blocked request is simply a STAY — 512 instead brakes
+# the ego to force the change. 1024 is bit 10, a sublane-model bit, and
+# has no effect without the sublane model.
+EGO_LC_MODE_UNCHECKED: int = 0
+EGO_LC_MODE_SAFETY_CHECKED: int = 768
+
+
+def disable_sumo_lane_change(
+    traci_conn, ego_id: str, mode: int = EGO_LC_MODE_UNCHECKED,
+) -> None:
     """Disable every internal lane-change motivation and safety override
     on the ego vehicle.
 
@@ -78,14 +92,15 @@ def disable_sumo_lane_change(traci_conn, ego_id: str) -> None:
       collisions; 10/11 respect their speed/brake gaps)
     - bits 10-11: sublane model
 
-    With every bit clear, SUMO will execute exactly the lane changes
-    `apply_action()` requests, including ones the LC2013 model would have
-    blocked as unsafe. **This is intentional** — the policy is the sole
-    decider, and it learns to avoid unsafe maneuvers via the collision
-    penalty in `rewards.py`. See
+    With every bit clear (`mode=0`, the default), SUMO executes exactly the
+    lane changes `apply_action()` requests, including unsafe ones — the
+    policy is the sole decider and learns safety from the collision
+    penalty. `mode=EGO_LC_MODE_SAFETY_CHECKED` (768) keeps autonomous LC
+    off but makes SUMO refuse a requested change that would violate other
+    drivers' gaps, like a car's lane-change assist. See
     `Project-Documentation/concepts/01-sumo-traffic-model.md`.
     """
-    traci_conn.vehicle.setLaneChangeMode(ego_id, 0)
+    traci_conn.vehicle.setLaneChangeMode(ego_id, mode)
 
 
 # ---------------------------------------------------------------------------
@@ -171,20 +186,26 @@ class LaneChangeCooldown:
         self._remaining = 0
 
     def gate(self, action: Action | int, valid_mask: np.ndarray) -> Action:
-        """Return the action that will actually execute this step.
+        """Return the action to submit to SUMO this step.
 
-        Call exactly once per env step, before `apply_action`. A lane change
-        executes only if no cooldown is active and the target lane exists;
-        an executed change starts a new cooldown.
+        Call exactly once per env step, before `apply_action`, then call
+        `confirm()` after the sim step. A lane change is submitted only if
+        no cooldown is active and the target lane exists.
         """
         a = Action(int(action))
         if self._remaining > 0:
             self._remaining -= 1
             return Action.STAY
         if a != Action.STAY and bool(valid_mask[int(a)]):
-            self._remaining = self._steps
             return a
         return Action.STAY
+
+    def confirm(self, changed: bool) -> None:
+        """Start the cooldown iff the submitted change actually happened.
+        Under a safety-checked lane-change mode SUMO can refuse a change;
+        a refused change must neither count nor block the next 1.5 s."""
+        if changed:
+            self._remaining = self._steps
 
     def mask_observation(self, observation: np.ndarray) -> np.ndarray:
         """Copy of `observation` with lane changes marked invalid while the

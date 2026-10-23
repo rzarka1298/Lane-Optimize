@@ -237,3 +237,34 @@ def test_lane_change_cooldown_enforced_in_sumo() -> None:
         assert (gaps >= 16).all(), gaps
     finally:
         e.close()
+
+
+@pytest.mark.slow
+@pytest.mark.sumo
+@pytest.mark.parametrize("mode,expect_changed", [(0, True), (768, False)])
+def test_ego_lane_change_mode_safety_check(mode: int, expect_changed: bool) -> None:
+    """A car parked right beside the ego: mode 0 executes the requested
+    change (and collides); 768 refuses it, the env reports STAY, and no
+    cooldown starts."""
+    import traci
+
+    e = LaneIQEnv(density="low", max_steps=60, warmup_steps=30, seed=42,
+                  ego_lane_change_mode=mode)
+    try:
+        e.reset(seed=42)
+        x = traci.vehicle.getLanePosition("ego_0")
+        lane = traci.vehicle.getLaneIndex("ego_0")
+        side = lane + 1 if lane < 2 else lane - 1
+        traci.vehicle.add("beside", "r_through", typeID="normal", depart="now",
+                          departLane=str(side), departPos=f"{x + 1.0:.1f}",
+                          departSpeed=f"{traci.vehicle.getSpeed('ego_0'):.1f}")
+        traci.vehicle.setLaneChangeMode("beside", 0)
+        _obs, _r, _t, _tr, _ = e.step(0)  # let 'beside' depart
+        action = 1 if side > lane else 2
+        _obs, _r, _t, _tr, info = e.step(action)
+        assert (info["executed_action"] == action) is expect_changed
+        if not expect_changed:
+            assert e.action_masks()[action], "refused change must not start a cooldown"
+    finally:
+        e.close()
+

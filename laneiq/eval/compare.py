@@ -118,6 +118,7 @@ def run_matrix(
     warmup_steps: int = 50,
     dqn_checkpoint: Path | None = None,
     ppo_checkpoint: Path | None = None,
+    env_kwargs: dict | None = None,
 ) -> tuple[list[AggregatedMetrics], list[EpisodeMetrics]]:
     """Run the full matrix. Returns (aggregated rows, raw per-episode rows)."""
     aggregated: list[AggregatedMetrics] = []
@@ -137,6 +138,7 @@ def run_matrix(
                 seeds=seeds,
                 max_steps=max_steps,
                 warmup_steps=warmup_steps,
+                env_kwargs=env_kwargs,
             )
             elapsed = time.monotonic() - t0
             agg = aggregate(episodes)
@@ -201,6 +203,11 @@ def main(argv: list[str] | None = None) -> int:
         "--per-episode-out", type=Path, default=None,
         help="optional path for raw per-episode CSV (debugging)",
     )
+    parser.add_argument(
+        "--ego-lane-change-mode", type=int, default=None,
+        help="SUMO lane-change mode for the ego (0 unchecked, 768 safety-"
+             "checked); default: the env's default",
+    )
     args = parser.parse_args(argv)
 
     print("\nLaneIQ eval matrix")
@@ -219,6 +226,10 @@ def main(argv: list[str] | None = None) -> int:
         warmup_steps=args.warmup_steps,
         dqn_checkpoint=args.dqn_checkpoint,
         ppo_checkpoint=args.ppo_checkpoint,
+        env_kwargs=(
+            {"ego_lane_change_mode": args.ego_lane_change_mode}
+            if args.ego_lane_change_mode is not None else None
+        ),
     )
 
     write_aggregated_csv(aggregated, args.out)

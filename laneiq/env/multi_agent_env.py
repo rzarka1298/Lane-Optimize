@@ -44,6 +44,7 @@ from pettingzoo import ParallelEnv
 from laneiq.env.actions import (
     ACTION_SPACE,
     DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
+    EGO_LC_MODE_UNCHECKED,
     LaneChangeCooldown,
     apply_action,
     disable_sumo_lane_change,
@@ -128,6 +129,7 @@ class LaneIQParallelEnv(ParallelEnv):
         depart_lanes: tuple[int, ...] | None = None,
         depart_speed_mps: float = 18.0,
         lane_change_cooldown_steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
+        ego_lane_change_mode: int = EGO_LC_MODE_UNCHECKED,
     ) -> None:
         if density not in _DENSITY_TO_ROUTES:
             raise ValueError(
@@ -151,6 +153,7 @@ class LaneIQParallelEnv(ParallelEnv):
         # rebuilt on every reset.
         self._cooldown_steps = lane_change_cooldown_steps
         self._cooldowns: dict[str, LaneChangeCooldown] = {}
+        self._ego_lc_mode = ego_lane_change_mode  # see actions.EGO_LC_MODE_*
 
         # Resolve depart positions / lanes per-ego, with cycling defaults.
         if depart_positions_m is None:
@@ -268,7 +271,7 @@ class LaneIQParallelEnv(ParallelEnv):
 
         # Disable internal LC override for every ego.
         for aid in self.possible_agents:
-            disable_sumo_lane_change(traci, aid)
+            disable_sumo_lane_change(traci, aid, self._ego_lc_mode)
 
         # Builder is shared (TraCI module-level state); each ego just calls
         # build with its own ego_id.
@@ -314,14 +317,16 @@ class LaneIQParallelEnv(ParallelEnv):
         # 1. Gate each agent's action through its lane-change cooldown, then
         # apply (use STAY for any missing). Rewards below still charge the
         # *requested* action, so spamming changes during a cooldown costs.
-        executed: dict[str, int] = {}
+        submitted: dict[str, int] = {}
+        lane_before: dict[str, int] = {}
         for aid in self.agents:
             a = actions.get(aid, 0)  # default to STAY
-            executed[aid] = int(self._cooldowns[aid].gate(
+            submitted[aid] = int(self._cooldowns[aid].gate(
                 a, valid_actions_mask(self._last_obs[aid]),
             ))
             try:
-                apply_action(traci, aid, executed[aid])
+                lane_before[aid] = int(traci.vehicle.getLaneIndex(aid))
+                apply_action(traci, aid, submitted[aid])
             except traci.exceptions.TraCIException as exc:
                 _log.warning("apply_action failed for %s: %s", aid, exc)
 
@@ -336,6 +341,18 @@ class LaneIQParallelEnv(ParallelEnv):
         except traci.exceptions.TraCIException:
             collision_ids = set()
             in_list = set()
+
+        # 3b. Which submitted changes actually happened (SUMO may refuse one
+        # under a safety-checked lane-change mode)? Only those count and
+        # start a cooldown.
+        executed: dict[str, int] = {}
+        for aid in self.agents:
+            changed = False
+            if submitted[aid] != 0 and aid in in_list and aid in lane_before:
+                with suppress(traci.exceptions.TraCIException):
+                    changed = int(traci.vehicle.getLaneIndex(aid)) != lane_before[aid]
+            self._cooldowns[aid].confirm(changed)
+            executed[aid] = submitted[aid] if changed else 0
 
         # 4. Compute per-agent reward + observation. Build the response dicts
         # so terminated agents still appear with their last reward/obs.

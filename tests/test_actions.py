@@ -269,6 +269,7 @@ _ALL_VALID = np.array([True, True, True])
 def test_cooldown_blocks_changes_for_n_steps_then_releases() -> None:
     cd = LaneChangeCooldown(steps=3)
     assert cd.gate(Action.CHANGE_LEFT, _ALL_VALID) == Action.CHANGE_LEFT
+    cd.confirm(True)  # SUMO executed it
     # Next 3 steps are forced to STAY regardless of the request.
     for _ in range(3):
         assert cd.active
@@ -304,6 +305,7 @@ def test_cooldown_mask_observation_makes_mask_stay_only() -> None:
     cd = LaneChangeCooldown(steps=2)
     assert cd.mask_observation(obs) is obs  # inactive → untouched
     cd.gate(Action.CHANGE_LEFT, _ALL_VALID)
+    cd.confirm(True)
     masked = cd.mask_observation(obs)
     assert obs[23] == 1.0  # input not mutated
     assert valid_actions_mask(masked).tolist() == [True, False, False]
@@ -312,6 +314,17 @@ def test_cooldown_mask_observation_makes_mask_stay_only() -> None:
 def test_cooldown_reset_clears_active_cooldown() -> None:
     cd = LaneChangeCooldown(steps=10)
     cd.gate(Action.CHANGE_LEFT, _ALL_VALID)
+    cd.confirm(True)
     cd.reset()
     assert not cd.active
     assert cd.gate(Action.CHANGE_RIGHT, _ALL_VALID) == Action.CHANGE_RIGHT
+
+
+def test_cooldown_not_started_by_a_refused_change() -> None:
+    """Under a safety-checked lane-change mode SUMO can refuse a submitted
+    change; that must not block the next 1.5 s."""
+    cd = LaneChangeCooldown(steps=5)
+    assert cd.gate(Action.CHANGE_LEFT, _ALL_VALID) == Action.CHANGE_LEFT
+    cd.confirm(False)
+    assert not cd.active
+    assert cd.gate(Action.CHANGE_LEFT, _ALL_VALID) == Action.CHANGE_LEFT

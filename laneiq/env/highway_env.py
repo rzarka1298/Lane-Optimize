@@ -36,6 +36,8 @@ import traci
 from laneiq.env.actions import (
     ACTION_SPACE,
     DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
+    EGO_LC_MODE_UNCHECKED,
+    Action,
     LaneChangeCooldown,
     apply_action,
     disable_sumo_lane_change,
@@ -158,6 +160,7 @@ class LaneIQEnv(gym.Env):
         reward_config: RewardConfig = DEFAULT_REWARD_CONFIG,
         loop: bool = False,
         lane_change_cooldown_steps: int = DEFAULT_LANE_CHANGE_COOLDOWN_STEPS,
+        ego_lane_change_mode: int = EGO_LC_MODE_UNCHECKED,
     ) -> None:
         """Construct the env. Does NOT start SUMO; that happens in `reset()`."""
         super().__init__()
@@ -207,6 +210,10 @@ class LaneIQEnv(gym.Env):
         # Min dwell between executed ego lane changes; also masks obs[23]
         # while active. 0 = off (pre-2026-10 dynamics). See actions.py.
         self._cooldown = LaneChangeCooldown(lane_change_cooldown_steps)
+        # SUMO lane-change mode for the ego: 0 = requests executed unchecked
+        # (policy is sole decider); 768 = SUMO refuses unsafe requests.
+        # See actions.EGO_LC_MODE_*.
+        self._ego_lc_mode = ego_lane_change_mode
         # Lap count is incremented every time the ego completes the 1km
         # road and is re-inserted at x=0 (loop mode only). Episode runs
         # until collision or max_steps.
@@ -299,7 +306,7 @@ class LaneIQEnv(gym.Env):
 
         # The ego is now in the vehicle list; disable its internal LC
         # override so the policy is the sole decider.
-        disable_sumo_lane_change(traci, _EGO_ID)
+        disable_sumo_lane_change(traci, _EGO_ID, self._ego_lc_mode)
 
         # Rush-mode ego tuning + dynamic traffic setup (see module
         # constants for the rationale). All scoped to this episode's
@@ -348,12 +355,17 @@ class LaneIQEnv(gym.Env):
         assert self._builder is not None
         prev = self._prev_reward_state
 
-        # Gate through the lane-change cooldown, then apply. `executed` is
-        # what SUMO actually sees; the reward still charges the *requested*
-        # action so unmasked learners pay for spamming changes.
-        executed = self._cooldown.gate(action, valid_actions_mask(self._last_obs))
+        # Gate through the lane-change cooldown, then apply. `executed`
+        # (below) is what SUMO actually did — a submitted change it refused
+        # counts as STAY. The reward still charges the *requested* action so
+        # unmasked learners pay for spamming changes.
+        submitted = self._cooldown.gate(action, valid_actions_mask(self._last_obs))
         try:
-            apply_action(traci, _EGO_ID, executed)
+            lane_before = int(traci.vehicle.getLaneIndex(_EGO_ID))
+        except traci.exceptions.TraCIException:
+            lane_before = -1
+        try:
+            apply_action(traci, _EGO_ID, submitted)
         except traci.exceptions.TraCIException as exc:
             # Race window: ego could have been removed between getIDList
             # check and changeLane call. Log and proceed; the post-step
@@ -373,6 +385,15 @@ class LaneIQEnv(gym.Env):
             # SUMO blew up on this step; treat as terminal-no-collision.
             ego_collided = False
             ego_in_list = False
+
+        # Did the submitted change happen? Without the sublane model SUMO
+        # moves the ego a whole lane in one step (or refuses).
+        changed = False
+        if submitted != Action.STAY and ego_in_list:
+            with suppress(traci.exceptions.TraCIException):
+                changed = int(traci.vehicle.getLaneIndex(_EGO_ID)) != lane_before
+        self._cooldown.confirm(changed)
+        executed = submitted if changed else Action.STAY
 
         # Loop mode: if the ego exited cleanly (off the end of the road,
         # no collision), re-insert it at x=0 and continue instead of
@@ -456,7 +477,7 @@ class LaneIQEnv(gym.Env):
         Applied on the initial spawn. Scoped to the episode's SUMO process.
 
         Note: this deliberately does NOT touch the lane-change mode, so the
-        `disable_sumo_lane_change(mode=0)` set in reset() stands and the
+        lane-change mode set in reset() stands and the
         DRIVING AGENT is the sole lane-change decider (no autonomous SUMO
         speed-gain). SUMO autonomous LC for a vehicle this much faster than
         traffic is unreliable — it camps in the leftmost lane and rarely
@@ -475,16 +496,11 @@ class LaneIQEnv(gym.Env):
         # be able to scrub speed hard without rear-ending. Defaults
         # (decel 4.5) are too weak for this speed gap.
         traci.vehicle.setDecel(_EGO_ID, 7.5)
-        # Lane-change mode 1024 = no autonomous LC, but TraCI lane-change
-        # requests ARE safety-checked. Other scenarios use mode 0 (TraCI
-        # changes executed unchecked) and rely on the trained policy to
-        # never pick an unsafe change. The hand-coded `overtaker` has a
-        # blind spot — a car sitting exactly alongside in the target lane
-        # reads as neither a front nor a rear neighbour — so without the
-        # safety check it would occasionally change into it. With 1024,
-        # SUMO simply refuses an unsafe change (the ego holds its lane and
-        # brakes instead). This is the rush demo's collision backstop.
-        traci.vehicle.setLaneChangeMode(_EGO_ID, 1024)
+        # Lane-change mode: the env-wide `ego_lane_change_mode` (set in
+        # reset()) applies here too. This used to force 1024 as a "safety
+        # check", but 1024 is a sublane bit with no effect here — measured
+        # identical to mode 0 (unchecked). Rush's 0 collisions come from the
+        # overtaker's own gap logic. Use mode 768 for real safety checks.
         # Allow passing on the right. LC2013's default (lcOvertakeRight=0)
         # makes the ego slow to match any car in the lane to its LEFT, so a
         # same-speed wall in lanes 1-2 pinned it at ~33 m/s in an EMPTY
@@ -644,7 +660,7 @@ class LaneIQEnv(gym.Env):
         for _ in range(50):
             traci.simulationStep()
             if _EGO_ID in traci.vehicle.getIDList():
-                disable_sumo_lane_change(traci, _EGO_ID)
+                disable_sumo_lane_change(traci, _EGO_ID, self._ego_lc_mode)
                 # Re-apply the rush ego tuning — disable_sumo_lane_change
                 # above reset the LC mode to 0, undoing it.
                 if self._density == "rush":

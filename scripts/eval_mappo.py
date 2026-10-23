@@ -54,12 +54,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-steps", type=int, default=1000)
     p.add_argument("--warmup-steps", type=int, default=50)
     p.add_argument("--out", type=Path, default=Path("results/week5_mappo_eval.csv"))
+    p.add_argument("--ego-lane-change-mode", type=int, default=None,
+                   help="SUMO lane-change mode for each ego (0 unchecked, "
+                        "768 safety-checked); default: the env's default")
     return p
 
 
 def run_one_episode(
     *, model, density: str, seed: int, n_egos: int,
-    max_steps: int, warmup_steps: int,
+    max_steps: int, warmup_steps: int, ego_lane_change_mode: int | None = None,
 ) -> list[MAPPOAgentMetrics]:
     """Run one episode of `LaneIQParallelEnv` with the shared policy."""
     import math
@@ -73,6 +76,8 @@ def run_one_episode(
         density=density, n_egos=n_egos,
         max_steps=max_steps, warmup_steps=warmup_steps,
         seed=seed,
+        **({} if ego_lane_change_mode is None
+           else {"ego_lane_change_mode": ego_lane_change_mode}),
     )
     try:
         obs, _info = env.reset(seed=seed)
@@ -176,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=model, density=density, seed=seed,
                 n_egos=args.n_egos,
                 max_steps=args.max_steps, warmup_steps=args.warmup_steps,
+                ego_lane_change_mode=args.ego_lane_change_mode,
             )
             elapsed = time.monotonic() - t0
             n_collisions = sum(1 for r in rows if r.collided)
